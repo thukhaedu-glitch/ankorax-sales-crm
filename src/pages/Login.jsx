@@ -1,9 +1,8 @@
 import{useState}from'react'
 import{auth}from'../firebase'
 import{signInWithEmailAndPassword}from'firebase/auth'
-import{useNavigate}from'react-router-dom'
-import{Mail,Lock,Eye,EyeOff,AlertCircle}from'lucide-react'
 import{useNavigate,Link}from'react-router-dom'
+import{Mail,Lock,Eye,EyeOff,AlertCircle}from'lucide-react'
 
 export default function Login(){
 const[email,setEmail]=useState('')
