@@ -9,6 +9,10 @@ import Clients from'./pages/Clients'
 import FollowUps from'./pages/FollowUps'
 import Commissions from'./pages/Commissions'
 import SalesReps from'./pages/SalesReps'
+import Signup from'./pages/Signup'
+
+
+
 
 function PrivateRoute({children}){
 const[user,setUser]=useState(undefined)
@@ -28,6 +32,7 @@ return(
 <Route path="/follow-ups" element={<PrivateRoute><FollowUps/></PrivateRoute>}/>
 <Route path="/commissions" element={<PrivateRoute><Commissions/></PrivateRoute>}/>
 <Route path="/sales-reps" element={<PrivateRoute><SalesReps/></PrivateRoute>}/>
+<Route path="/signup" element={<Signup/>}/>
 </Routes>
 </BrowserRouter>
 )
