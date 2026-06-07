@@ -60,6 +60,10 @@ return(
 <button type="submit" disabled={loading} className="btn btn-primary" style={{width:'100%',justifyContent:'center',padding:11,fontSize:14}}>
 {loading?'Signing in...':'Sign In'}
 </button>
+  <div style={{textAlign:'center',fontSize:13,color:'var(--text-3)',marginTop:14}}>
+Don't have an account?{' '}
+<Link to="/signup" style={{color:'var(--primary)',fontWeight:500,textDecoration:'none'}}>Sign up</Link>
+</div>
 </form>
 </div>
 </div>
