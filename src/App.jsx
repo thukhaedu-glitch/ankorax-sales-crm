@@ -10,6 +10,8 @@ import FollowUps from'./pages/FollowUps'
 import Commissions from'./pages/Commissions'
 import SalesReps from'./pages/SalesReps'
 import Signup from'./pages/Signup'
+import UsersPage from'./pages/Users'
+
 
 
 
@@ -33,6 +35,7 @@ return(
 <Route path="/commissions" element={<PrivateRoute><Commissions/></PrivateRoute>}/>
 <Route path="/sales-reps" element={<PrivateRoute><SalesReps/></PrivateRoute>}/>
 <Route path="/signup" element={<Signup/>}/>
+<Route path="/users" element={<PrivateRoute><UsersPage/></PrivateRoute>}/>
 </Routes>
 </BrowserRouter>
 )
