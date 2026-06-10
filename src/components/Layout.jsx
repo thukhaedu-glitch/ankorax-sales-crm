@@ -2,7 +2,7 @@ import{useState}from'react'
 import{auth}from'../firebase'
 import{signOut}from'firebase/auth'
 import{useLocation,useNavigate}from'react-router-dom'
-import{LayoutDashboard,Users,UserPlus,Calendar,DollarSign,Menu,X,LogOut,Target}from'lucide-react'
+import{LayoutDashboard,Users,UserPlus,Calendar,DollarSign,Menu,X,LogOut,Target,UserCheck}from'lucide-react'
 
 const NAV=[
 {path:'/',label:'Dashboard',icon:LayoutDashboard},
