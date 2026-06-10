@@ -140,11 +140,19 @@ setSaving(false)
 
 const handleStatusChange=async(user,status)=>{
 try{
-const col=user._source==='main'?'companies':'crmClients'
-const field=user._source==='main'?'subscriptionStatus':'status'
-await updateDoc(doc(db,col,user.id),{[field]:status,updatedAt:new Date().toISOString()})
-if(user._source==='main')setCompanies(prev=>prev.map(c=>c.id===user.id?{...c,subscriptionStatus:status}:c))
-else setCrmClients(prev=>prev.map(c=>c.id===user.id?{...c,status}:c))
+if(user._source==='main'){
+await updateDoc(doc(db,'companies',user.id),{
+subscriptionStatus:status,
+updatedAt:new Date().toISOString(),
+})
+setCompanies(prev=>prev.map(c=>c.id===user.id?{...c,subscriptionStatus:status}:c))
+}else{
+await updateDoc(doc(db,'crmClients',user.id),{
+status,
+updatedAt:new Date().toISOString(),
+})
+setCrmClients(prev=>prev.map(c=>c.id===user.id?{...c,status}:c))
+}
 }catch(e){alert(e.message)}
 }
 
