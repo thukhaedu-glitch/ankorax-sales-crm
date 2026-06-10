@@ -11,6 +11,7 @@ const NAV=[
 {path:'/follow-ups',label:'Follow-ups',icon:Calendar},
 {path:'/commissions',label:'Commissions',icon:DollarSign},
 {path:'/sales-reps',label:'Sales Team',icon:UserPlus},
+{path:'/users',label:'Users',icon:Users},
 ]
 
 const Logo=()=>(
