@@ -135,6 +135,24 @@ try{
 const profSnap=await getDocs(collection(db,'companies',user.id,'memberProfiles'))
 const emailMap={}
 profSnap.docs.forEach(d=>{emailMap[d.id]=d.data()})
+
+// memberProfiles မရှိတဲ့ uid တွေအတွက် users collection မှာ ရှာ
+const uids=Object.keys(user.members||{})
+for(const uid of uids){
+if(!emailMap[uid]){
+try{
+const userDocSnap=await getDocs(collection(db,'users'))
+const userDoc=userDocSnap.docs.find(d=>d.id===uid)
+if(userDoc){
+const userData=userDoc.data()
+emailMap[uid]={
+email:userData.email||'-',
+displayName:userData.displayName||'',
+}
+}
+}catch(e){}
+}
+}
 setMemberEmails(emailMap)
 }catch(e){console.error('memberProfiles:',e)}
 
