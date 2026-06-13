@@ -13,6 +13,7 @@ import Signup from'./pages/Signup'
 import UsersPage from'./pages/Users'
 import Payments from'./pages/Payments'
 import Analytics from'./pages/Analytics'
+import PlanManagement from'./pages/PlanManagement'
 
 
 
@@ -39,6 +40,7 @@ return(
 <Route path="/users" element={<PrivateRoute><UsersPage/></PrivateRoute>}/>
 <Route path="/payments" element={<PrivateRoute><Payments/></PrivateRoute>}/>
 <Route path="/analytics" element={<PrivateRoute><Analytics/></PrivateRoute>}/>
+  <Route path="/plan-management" element={<PrivateRoute><PlanManagement/></PrivateRoute>}/>
 </Routes>
 </BrowserRouter>
 )
