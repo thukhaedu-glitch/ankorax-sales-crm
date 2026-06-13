@@ -1,6 +1,6 @@
 import{useState,useEffect}from'react'
 import{db}from'../firebase'
-import{collection,getDocs,updateDoc,doc,addDoc,query,orderBy,limit}from'firebase/firestore'
+import{collection,getDocs,getDoc,updateDoc,doc,addDoc,query,orderBy,limit}from'firebase/firestore'
 import Layout from'../components/Layout'
 import{Search,Users,Eye,UserCheck,X,Save,Clock,Building,Shield,Phone,Mail}from'lucide-react'
 
@@ -130,33 +130,34 @@ setMemberEmails({})
 setLoadingDetail(true)
 
 if(user._source==='main'){
-// Load memberProfiles (emails)
+try{
+const uids=Object.keys(user.members||{})
+const emailMap={}
+
 try{
 const profSnap=await getDocs(collection(db,'companies',user.id,'memberProfiles'))
-const emailMap={}
 profSnap.docs.forEach(d=>{emailMap[d.id]=d.data()})
+}catch(e){}
 
-// memberProfiles မရှိတဲ့ uid တွေအတွက် users collection မှာ ရှာ
-const uids=Object.keys(user.members||{})
 for(const uid of uids){
-if(!emailMap[uid]){
+if(!emailMap[uid]||!emailMap[uid].email){
 try{
-const userDocSnap=await getDocs(collection(db,'users'))
-const userDoc=userDocSnap.docs.find(d=>d.id===uid)
-if(userDoc){
-const userData=userDoc.data()
+const userSnap=await getDoc(doc(db,'users',uid))
+if(userSnap.exists()){
+const ud=userSnap.data()
 emailMap[uid]={
-email:userData.email||'-',
-displayName:userData.displayName||'',
+email:ud.email||'-',
+phone:ud.phone||'',
+displayName:ud.displayName||'',
+role:ud.role||user.members[uid],
 }
 }
 }catch(e){}
 }
 }
 setMemberEmails(emailMap)
-}catch(e){console.error('memberProfiles:',e)}
+}catch(e){console.error('member load:',e)}
 
-// Load audit logs
 try{
 const logSnap=await getDocs(
 query(collection(db,'companies',user.id,'auditLogs'),orderBy('timestamp','desc'),limit(30))
@@ -168,7 +169,6 @@ setAuditLogs([])
 }
 }
 
-// Load notes
 try{
 const noteSnap=await getDocs(collection(db,'userNotes',user.id,'notes'))
 setNotes(noteSnap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||'')))
@@ -251,7 +251,6 @@ active:users.filter(u=>u.status==='active').length,
 expired:users.filter(u=>u.status==='expired').length,
 blocked:users.filter(u=>u.status==='blocked').length,
 }
-
 return(
 <Layout title="Users">
 
@@ -298,11 +297,16 @@ return(
 <div style={{padding:24}}>
 
 {/* Info Grid */}
+{(()=>{
+const ownerProfile=memberEmails[detailModal.ownerUid]||{}
+const displayEmail=(detailModal.email&&detailModal.email!=='-')?detailModal.email:(ownerProfile.email||'-')
+const displayPhone=(detailModal.phone&&detailModal.phone!=='-')?detailModal.phone:(ownerProfile.phone||'-')
+return(
 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:20}}>
 {[
 {label:'Company Code',value:detailModal.companyCode},
-{label:'Email',value:detailModal.email},
-{label:'Phone',value:detailModal.phone||'-'},
+{label:'Email',value:displayEmail},
+{label:'Phone',value:displayPhone},
 {label:'Plan',value:detailModal.plan},
 {label:'Status',value:detailModal.status},
 {label:'Assigned Rep',value:detailModal.assignedName||'Unassigned'},
@@ -319,6 +323,8 @@ return(
 </div>
 ))}
 </div>
+)
+})()}
 
 {/* Members */}
 {detailModal._source==='main'&&Object.keys(detailModal.members||{}).length>0&&(
@@ -343,6 +349,11 @@ return(
 <Mail size={11} color="var(--text-3)"/>
 {profile?.email||'Not logged in yet'}
 </div>
+{profile?.phone&&(
+<div style={{fontSize:11,color:'var(--text-2)',marginTop:2,display:'flex',alignItems:'center',gap:6}}>
+<Phone size={10} color="var(--text-3)"/>{profile.phone}
+</div>
+)}
 {profile?.displayName&&(
 <div style={{fontSize:11,color:'var(--text-2)',marginTop:1}}>{profile.displayName}</div>
 )}
