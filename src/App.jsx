@@ -11,7 +11,7 @@ import Commissions from'./pages/Commissions'
 import SalesReps from'./pages/SalesReps'
 import Signup from'./pages/Signup'
 import UsersPage from'./pages/Users'
-
+import Payments from'./pages/Payments'
 
 
 
@@ -36,6 +36,7 @@ return(
 <Route path="/sales-reps" element={<PrivateRoute><SalesReps/></PrivateRoute>}/>
 <Route path="/signup" element={<Signup/>}/>
 <Route path="/users" element={<PrivateRoute><UsersPage/></PrivateRoute>}/>
+<Route path="/payments" element={<PrivateRoute><Payments/></PrivateRoute>}/>
 </Routes>
 </BrowserRouter>
 )
