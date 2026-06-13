@@ -1,8 +1,9 @@
 import{useState,useEffect}from'react'
 import{db}from'../firebase'
 import{collection,getDocs,getDoc,updateDoc,doc,addDoc,query,orderBy,limit,deleteField,deleteDoc}from'firebase/firestore'
+import{Search,Users,Eye,UserCheck,X,Save,Clock,Building,Shield,Phone,Mail,Trash2}from'lucide-react'
 import Layout from'../components/Layout'
-import{Search,Users,Eye,UserCheck,X,Save,Clock,Building,Shield,Phone,Mail}from'lucide-react'
+
 
 const PLANS=['Starter','Growth','Business']
 const STATUS_COLORS={active:'#16a34a',expired:'#d97706',blocked:'#dc2626',hold:'#64748b'}
@@ -114,8 +115,10 @@ const filtered=allUsers().filter(u=>{
 const matchSearch=
 u.companyName?.toLowerCase().includes(search.toLowerCase())||
 u.email?.toLowerCase().includes(search.toLowerCase())||
-u.companyCode?.toLowerCase().includes(search.toLowerCase())
-const matchStatus=filterStatus?u.status===filterStatus:true
+u.companyCode?.toLowerCase().includes(search.toLowerCase())||
+u.phone?.toLowerCase().includes(search.toLowerCase())||
+u.id?.toLowerCase().includes(search.toLowerCase())
+const matchStatus=filterStatus?(filterStatus==='__inactive'?u.status!=='active':u.status===filterStatus):true
 const matchPlan=filterPlan?u.plan===filterPlan:true
 const matchRep=filterRep?u.assignedTo===filterRep:true
 return matchSearch&&matchStatus&&matchPlan&&matchRep
@@ -252,7 +255,18 @@ setDetailModal({...detailModal,members:newMembers,memberCount:Object.keys(newMem
 setCompanies(prev=>prev.map(c=>c.id===detailModal.id?{...c,members:newMembers}:c))
 }catch(e){alert(e.message)}
 }
-
+const handleDeleteCompany=async(user)=>{
+const label=user.companyName||user.email||user.id
+if(!confirm(`"${label}" ကို အပြီးအပိုင် ဖျက်မှာ သေချာလား? ဒါ irreversible ဖြစ်ပါတယ်။`))return
+if(!confirm(`နောက်ဆုံး အတည်ပြုချက် — "${label}" နဲ့ သက်ဆိုင်တဲ့ data အားလုံး ပျောက်သွားမယ်။ ဆက်လုပ်မလား?`))return
+try{
+const col=user._source==='main'?'companies':'crmClients'
+await deleteDoc(doc(db,col,user.id))
+if(user._source==='main')setCompanies(prev=>prev.filter(c=>c.id!==user.id))
+else setCrmClients(prev=>prev.filter(c=>c.id!==user.id))
+if(detailModal&&detailModal.id===user.id)setDetailModal(null)
+}catch(e){alert(e.message)}
+}
 const fmtDate=(d)=>{
 if(!d)return'-'
 try{return new Date(d).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})}
@@ -503,6 +517,7 @@ background:roleColor(role).bg,color:roleColor(role).color,textTransform:'capital
 </div>
 <select className="form-input" style={{width:'auto',fontSize:12}} value={filterStatus} onChange={e=>setFilterStatus(e.target.value)}>
 <option value="">All Status</option>
+<option value="__inactive">⚠ Inactive (not active)</option>
 {['active','expired','blocked','hold'].map(s=><option key={s} value={s} style={{textTransform:'capitalize'}}>{s}</option>)}
 </select>
 <select className="form-input" style={{width:'auto',fontSize:12}} value={filterPlan} onChange={e=>setFilterPlan(e.target.value)}>
@@ -598,6 +613,10 @@ fontSize:11,fontWeight:600,cursor:'pointer',outline:'none',textTransform:'capita
 <button type="button" onClick={()=>openDetail(u)} title="View Detail" style={{background:'none',border:'none',cursor:'pointer',color:'var(--text-2)',padding:4,borderRadius:6}}>
 <Eye size={14}/>
 </button>
+<button type="button" onClick={()=>handleDeleteCompany(u)} title="Delete" style={{background:'none',border:'none',cursor:'pointer',color:'#dc2626',padding:4,borderRadius:6}}>
+<Trash2 size={14}/>
+</button>
+</div>
 </div>
 </td>
 </tr>
