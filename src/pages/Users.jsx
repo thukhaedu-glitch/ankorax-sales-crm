@@ -313,11 +313,11 @@ return(
 {label:'Status',value:detailModal.status},
 {label:'Assigned Rep',value:detailModal.assignedName||'Unassigned'},
 {label:'Start Date',value:fmtDate(detailModal.startDate)},
-{label:'End Date',value:fmtDate(detailModal.endDate)},
+{label:'End Date',value:detailModal.endDate?fmtDate(detailModal.endDate):'No expiry'},
 {label:'Created',value:fmtDate(detailModal.createdAt)},
 {label:'Source',value:detailModal._source==='main'?'Main App':'CRM'},
 {label:'Total Members',value:String(detailModal.memberCount)},
-{label:'Last Login',value:fmtDate(detailModal.lastLogin)},
+{label:'Last Login',value:displayLastLogin?fmtDate(displayLastLogin):'-'},
 ].map(({label,value})=>(
 <div key={label} style={{background:'#f8fafc',borderRadius:8,padding:'10px 12px'}}>
 <div style={{fontSize:10,fontWeight:600,color:'var(--text-3)',textTransform:'uppercase',marginBottom:3}}>{label}</div>
