@@ -296,11 +296,13 @@ return(
 </div>
 <div style={{padding:24}}>
 
+
 {/* Info Grid */}
 {(()=>{
 const ownerProfile=memberEmails[detailModal.ownerUid]||{}
 const displayEmail=(detailModal.email&&detailModal.email!=='-')?detailModal.email:(ownerProfile.email||'-')
 const displayPhone=(detailModal.phone&&detailModal.phone!=='-')?detailModal.phone:(ownerProfile.phone||'-')
+const displayLastLogin=detailModal.lastLogin||ownerProfile.lastLogin||''
 return(
 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:20}}>
 {[
