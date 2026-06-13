@@ -2,7 +2,8 @@ import{useState}from'react'
 import{auth}from'../firebase'
 import{signOut}from'firebase/auth'
 import{useLocation,useNavigate}from'react-router-dom'
-import{LayoutDashboard,Users,UserPlus,Calendar,DollarSign,Menu,X,LogOut,Target,UserCheck}from'lucide-react'
+import{LayoutDashboard,Users,UserPlus,Calendar,DollarSign,Menu,X,LogOut,Target,UserCheck,CreditCard}from'lucide-react'
+
 
 const NAV=[
 {path:'/',label:'Dashboard',icon:LayoutDashboard},
@@ -12,6 +13,7 @@ const NAV=[
 {path:'/commissions',label:'Commissions',icon:DollarSign},
 {path:'/sales-reps',label:'Sales Team',icon:UserPlus},
 {path:'/users',label:'Users',icon:Users},
+{path:'/payments',label:'Payments',icon:CreditCard},
 ]
 
 const Logo=()=>(
