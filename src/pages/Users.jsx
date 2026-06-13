@@ -1,8 +1,9 @@
 import{useState,useEffect}from'react'
-import{db}from'../firebase'
-import{collection,getDocs,getDoc,updateDoc,doc,addDoc,query,orderBy,limit,deleteField,deleteDoc}from'firebase/firestore'
+import{db,secondaryAuth}from'../firebase'
+import{collection,getDocs,getDoc,updateDoc,doc,addDoc,setDoc,query,orderBy,limit,deleteField,deleteDoc,serverTimestamp}from'firebase/firestore'
+import{createUserWithEmailAndPassword,signOut}from'firebase/auth'
 import Layout from'../components/Layout'
-import{Search,Users,Eye,UserCheck,X,Save,Clock,Building,Shield,Phone,Mail,Trash2}from'lucide-react'
+import{Search,Users,Eye,UserCheck,X,Save,Clock,Building,Shield,Phone,Mail,Trash2,Plus,Copy}from'lucide-react'
 
 const PLANS=['Starter','Growth','Business']
 const STATUS_COLORS={active:'#16a34a',expired:'#d97706',blocked:'#dc2626',hold:'#64748b'}
@@ -26,6 +27,10 @@ const[noteText,setNoteText]=useState('')
 const[notes,setNotes]=useState([])
 const[loadingDetail,setLoadingDetail]=useState(false)
 const[memberEmails,setMemberEmails]=useState({})
+const[createModal,setCreateModal]=useState(false)
+const[createForm,setCreateForm]=useState({companyName:'',ownerName:'',email:'',phone:''})
+const[createResult,setCreateResult]=useState(null)
+const[creating,setCreating]=useState(false)
 
 useEffect(()=>{
 const load=async()=>{
@@ -281,6 +286,60 @@ if(detailModal&&detailModal.id===user.id)setDetailModal(null)
 }catch(e){alert(e.message)}
 }
 
+// Generate temp password
+const genTempPassword=()=>{
+const chars='ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789'
+let p=''
+for(let i=0;i<10;i++)p+=chars.charAt(Math.floor(Math.random()*chars.length))
+return p+'@1'
+}
+
+// Create new company + owner account (uses secondary app — CRM login unaffected)
+const handleCreateCompany=async()=>{
+const{companyName,ownerName,email,phone}=createForm
+if(!companyName.trim()||!email.trim()){alert('Company name နဲ့ email လိုအပ်ပါတယ်');return}
+if(!phone.trim()){alert('Phone number လိုအပ်ပါတယ်');return}
+setCreating(true)
+try{
+const tempPass=genTempPassword()
+// Secondary app နဲ့ user create (main CRM login မပြောင်း)
+const cred=await createUserWithEmailAndPassword(secondaryAuth,email.trim(),tempPass)
+const uid=cred.user.uid
+const inviteCode='INV-'+Math.random().toString(36).substring(2,8).toUpperCase()
+// Company doc
+const companyRef=await addDoc(collection(db,'companies'),{
+name:companyName.trim(),companyName:companyName.trim(),plan:'free',
+members:{[uid]:'owner'},ownerId:uid,
+ownerEmail:email.trim(),ownerPhone:phone.trim(),
+inviteCode,subscriptionStatus:'active',
+createdAt:serverTimestamp(),
+createdViaCRM:true,
+})
+// users doc
+await setDoc(doc(db,'users',uid),{
+displayName:ownerName.trim()||companyName.trim(),
+email:email.trim(),phone:phone.trim(),role:'owner',
+companyId:companyRef.id,createdAt:serverTimestamp(),
+})
+// memberProfile
+await setDoc(doc(db,'companies',companyRef.id,'memberProfiles',uid),{
+uid,email:email.trim(),phone:phone.trim(),
+role:'owner',displayName:ownerName.trim()||companyName.trim(),
+joinedAt:new Date().toISOString(),
+})
+// secondary app ကနေ sign out (cleanup)
+try{await signOut(secondaryAuth)}catch(e){}
+// local list update
+setCompanies(prev=>[{id:companyRef.id,name:companyName.trim(),companyName:companyName.trim(),plan:'free',members:{[uid]:'owner'},ownerId:uid,ownerEmail:email.trim(),ownerPhone:phone.trim(),inviteCode,subscriptionStatus:'active',createdAt:{seconds:Math.floor(Date.now()/1000)}},...prev])
+// show result with temp password
+setCreateResult({email:email.trim(),tempPass,companyName:companyName.trim()})
+setCreateForm({companyName:'',ownerName:'',email:'',phone:''})
+}catch(e){
+alert(e.code==='auth/email-already-in-use'?'ဒီ email က အသုံးပြုပြီးသား ဖြစ်နေပါတယ်':e.message)
+}
+setCreating(false)
+}
+
 const fmtDate=(d)=>{
 if(!d)return'-'
 try{return new Date(d).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})}
@@ -313,6 +372,59 @@ blocked:users.filter(u=>u.status==='blocked').length,
 
 return(
 <Layout title="Users">
+
+{/* Create Company Modal */}
+{createModal&&(
+<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center',padding:20}}>
+<div style={{background:'white',borderRadius:16,width:'100%',maxWidth:440,boxShadow:'0 20px 60px rgba(0,0,0,0.2)'}}>
+<div style={{padding:'20px 24px',borderBottom:'0.5px solid #f1f5f9',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+<div style={{fontWeight:600,fontSize:15,display:'flex',alignItems:'center',gap:8}}><Plus size={16} color="var(--primary)"/>New Company</div>
+<button type="button" onClick={()=>{setCreateModal(false);setCreateResult(null)}} style={{background:'none',border:'none',cursor:'pointer',color:'var(--text-3)'}}><X size={18}/></button>
+</div>
+<div style={{padding:24}}>
+{createResult?(
+<div>
+<div style={{background:'rgba(22,163,74,0.08)',border:'0.5px solid rgba(22,163,74,0.3)',borderRadius:10,padding:16,marginBottom:16}}>
+<div style={{fontSize:13,fontWeight:600,color:'#16a34a',marginBottom:10}}>✓ Account ဖန်တီးပြီးပါပြီ!</div>
+<div style={{fontSize:12,color:'var(--text-2)',marginBottom:6}}>Company: <strong>{createResult.companyName}</strong></div>
+<div style={{fontSize:12,color:'var(--text-2)',marginBottom:10}}>Email: <strong>{createResult.email}</strong></div>
+<div style={{fontSize:11,color:'var(--text-3)',marginBottom:4}}>Temporary Password (owner ကို ပေးပါ):</div>
+<div style={{display:'flex',gap:6,alignItems:'center'}}>
+<code style={{flex:1,background:'white',border:'0.5px solid var(--border)',borderRadius:8,padding:'8px 12px',fontSize:14,fontWeight:600,fontFamily:'monospace',color:'var(--text-1)'}}>{createResult.tempPass}</code>
+<button type="button" onClick={()=>{navigator.clipboard.writeText(createResult.tempPass);alert('Copied!')}} className="btn btn-ghost" style={{padding:'8px 10px'}}><Copy size={14}/></button>
+</div>
+<div style={{fontSize:10,color:'var(--text-3)',marginTop:8}}>⚠️ Owner ကို ပေးပြီး login ဝင်ပြီးနောက် password ပြောင်းခိုင်းပါ။</div>
+</div>
+<button type="button" onClick={()=>{setCreateModal(false);setCreateResult(null)}} className="btn btn-primary" style={{width:'100%',justifyContent:'center'}}>Done</button>
+</div>
+):(
+<div>
+<div style={{marginBottom:12}}>
+<label style={{fontSize:12,fontWeight:500,color:'var(--text-2)',display:'block',marginBottom:5}}>Company Name *</label>
+<input className="form-input" value={createForm.companyName} onChange={e=>setCreateForm({...createForm,companyName:e.target.value})} placeholder="Company name"/>
+</div>
+<div style={{marginBottom:12}}>
+<label style={{fontSize:12,fontWeight:500,color:'var(--text-2)',display:'block',marginBottom:5}}>Owner Name</label>
+<input className="form-input" value={createForm.ownerName} onChange={e=>setCreateForm({...createForm,ownerName:e.target.value})} placeholder="Owner full name"/>
+</div>
+<div style={{marginBottom:12}}>
+<label style={{fontSize:12,fontWeight:500,color:'var(--text-2)',display:'block',marginBottom:5}}>Email *</label>
+<input className="form-input" type="email" value={createForm.email} onChange={e=>setCreateForm({...createForm,email:e.target.value})} placeholder="owner@email.com"/>
+</div>
+<div style={{marginBottom:20}}>
+<label style={{fontSize:12,fontWeight:500,color:'var(--text-2)',display:'block',marginBottom:5}}>Phone *</label>
+<input className="form-input" type="tel" value={createForm.phone} onChange={e=>setCreateForm({...createForm,phone:e.target.value})} placeholder="09xxxxxxxxx"/>
+</div>
+<div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
+<button type="button" onClick={()=>setCreateModal(false)} className="btn btn-ghost">Cancel</button>
+<button type="button" onClick={handleCreateCompany} disabled={creating} className="btn btn-primary"><Save size={14}/>{creating?'Creating...':'Create'}</button>
+</div>
+</div>
+)}
+</div>
+</div>
+</div>
+)}
 
 {/* Assign Modal */}
 {assignModal&&(
@@ -543,6 +655,9 @@ background:roleColor(role).bg,color:roleColor(role).color,textTransform:'capital
 <option value="">All Reps</option>
 {salesReps.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}
 </select>
+<button type="button" onClick={()=>{setCreateModal(true);setCreateResult(null)}} className="btn btn-primary" style={{fontSize:12,padding:'8px 14px',whiteSpace:'nowrap'}}>
+<Plus size={14}/>New Company
+</button>
 </div>
 
 {/* Table */}
