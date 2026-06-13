@@ -1,6 +1,6 @@
 import{useState,useEffect}from'react'
 import{db}from'../firebase'
-import{collection,getDocs,getDoc,updateDoc,doc,addDoc,query,orderBy,limit}from'firebase/firestore'
+import{collection,getDocs,getDoc,updateDoc,doc,addDoc,query,orderBy,limit,deleteField,deleteDoc}from'firebase/firestore'
 import Layout from'../components/Layout'
 import{Search,Users,Eye,UserCheck,X,Save,Clock,Building,Shield,Phone,Mail}from'lucide-react'
 
@@ -222,6 +222,37 @@ setNoteText('')
 }catch(e){alert(e.message)}
 }
 
+const handleMemberRole=async(uid,newRole)=>{
+if(!detailModal)return
+const profile=memberEmails[uid]
+const who=profile?.email||uid.slice(0,12)
+if(!confirm(`Change role of ${who} to "${newRole}"?`))return
+try{
+await updateDoc(doc(db,'companies',detailModal.id),{[`members.${uid}`]:newRole})
+try{await updateDoc(doc(db,'companies',detailModal.id,'memberProfiles',uid),{role:newRole})}catch(e){}
+try{await updateDoc(doc(db,'users',uid),{role:newRole})}catch(e){}
+const newMembers={...detailModal.members,[uid]:newRole}
+setDetailModal({...detailModal,members:newMembers})
+setCompanies(prev=>prev.map(c=>c.id===detailModal.id?{...c,members:newMembers}:c))
+}catch(e){alert(e.message)}
+}
+
+const handleMemberRemove=async(uid)=>{
+if(!detailModal)return
+const profile=memberEmails[uid]
+const who=profile?.email||uid.slice(0,12)
+if(detailModal.members[uid]==='owner'){alert('Owner ကို remove လုပ်လို့မရပါ။');return}
+if(!confirm(`Remove ${who} from this company? ဒါ irreversible ဖြစ်ပါတယ်။`))return
+try{
+await updateDoc(doc(db,'companies',detailModal.id),{[`members.${uid}`]:deleteField()})
+try{await deleteDoc(doc(db,'companies',detailModal.id,'memberProfiles',uid))}catch(e){}
+const newMembers={...detailModal.members}
+delete newMembers[uid]
+setDetailModal({...detailModal,members:newMembers,memberCount:Object.keys(newMembers).length})
+setCompanies(prev=>prev.map(c=>c.id===detailModal.id?{...c,members:newMembers}:c))
+}catch(e){alert(e.message)}
+}
+
 const fmtDate=(d)=>{
 if(!d)return'-'
 try{return new Date(d).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})}
@@ -296,7 +327,6 @@ return(
 </div>
 <div style={{padding:24}}>
 
-
 {/* Info Grid */}
 {(()=>{
 const ownerProfile=memberEmails[detailModal.ownerUid]||{}
@@ -364,11 +394,27 @@ return(
 )}
 <div style={{fontSize:10,color:'#d1d5db',fontFamily:'monospace',marginTop:2}}>{uid.slice(0,24)}...</div>
 </div>
+<div style={{display:'flex',alignItems:'center',gap:6,flexShrink:0,marginLeft:8}}>
+{role==='owner'?(
 <span style={{
 fontSize:11,fontWeight:600,padding:'3px 10px',borderRadius:20,
-background:roleColor(role).bg,color:roleColor(role).color,
-textTransform:'capitalize',flexShrink:0,marginLeft:8,
+background:roleColor(role).bg,color:roleColor(role).color,textTransform:'capitalize',
 }}>{role}</span>
+):(
+<>
+<select value={role} onChange={e=>handleMemberRole(uid,e.target.value)} style={{
+fontSize:11,fontWeight:600,padding:'3px 8px',borderRadius:20,border:'none',cursor:'pointer',outline:'none',
+background:roleColor(role).bg,color:roleColor(role).color,textTransform:'capitalize',
+}}>
+<option value="admin">admin</option>
+<option value="staff">staff</option>
+</select>
+<button type="button" onClick={()=>handleMemberRemove(uid)} title="Remove member" style={{background:'none',border:'none',cursor:'pointer',color:'#dc2626',padding:2,borderRadius:6,display:'flex',alignItems:'center'}}>
+<X size={14}/>
+</button>
+</>
+)}
+</div>
 </div>
 )
 })}
