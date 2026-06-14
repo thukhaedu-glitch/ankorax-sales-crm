@@ -175,6 +175,8 @@ setRequests(prev=>prev.map(r=>r.id===req.id?{...r,status:'refunded'}:r))
 }catch(e){alert(e.message)}
 setProcessing(null)
 }
+
+const filtered=requests.filter(r=>filter==='all'?true:r.status===filter)
 const counts={
 pending:requests.filter(r=>r.status==='pending').length,
 approved:requests.filter(r=>r.status==='approved').length,
