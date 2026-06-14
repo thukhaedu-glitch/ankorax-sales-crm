@@ -17,6 +17,7 @@ import PlanManagement from'./pages/PlanManagement'
 import Coupons from'./pages/Coupons'
 import CommissionSettings from'./pages/CommissionSettings'
 import ReceiptSettings from'./pages/ReceiptSettings'
+import VerifyReceipt from'./pages/VerifyReceipt'
 
 
 
@@ -47,6 +48,7 @@ return(
 <Route path="/coupons" element={<PrivateRoute><Coupons/></PrivateRoute>}/>
 <Route path="/commission-settings" element={<PrivateRoute><CommissionSettings/></PrivateRoute>}/>
 <Route path="/receipt-settings" element={<PrivateRoute><ReceiptSettings/></PrivateRoute>}/>
+<Route path="/verify-receipt/:requestId" element={<VerifyReceipt/>}/>
 </Routes>
 </BrowserRouter>
 )
