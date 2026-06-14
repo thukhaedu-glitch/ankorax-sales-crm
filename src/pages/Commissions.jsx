@@ -101,16 +101,36 @@ await updateDoc(doc(db,'commissions',id),{status:'paid',paidAt:new Date().toISOS
 setCommissions(prev=>prev.map(c=>c.id===id?{...c,status:'paid'}:c))
 }
 
+const handleCancel=async(id)=>{
+if(!confirm('ဒီ commission ကို cancel မလား? (customer cancel/refund ဖြစ်လို့)'))return
+await updateDoc(doc(db,'commissions',id),{status:'cancelled',cancelledAt:new Date().toISOString()})
+setCommissions(prev=>prev.map(c=>c.id===id?{...c,status:'cancelled'}:c))
+}
+
+// deferred → 10 ရက်ပြည့်ရင် pending ဖြစ်တယ် (display)
+const isReady=(c)=>!c.deferredUntil||new Date(c.deferredUntil)<=new Date()
+const effStatus=(c)=>{
+if(c.status==='paid')return'paid'
+if(c.status==='cancelled')return'cancelled'
+if(c.status==='deferred'&&!isReady(c))return'deferred'
+return'pending'
+}
+const daysLeft=(c)=>{
+if(!c.deferredUntil)return 0
+const d=Math.ceil((new Date(c.deferredUntil)-new Date())/(1000*60*60*24))
+return d>0?d:0
+}
+
 const filtered=commissions.filter(c=>{
 const matchSearch=c.salesRepName?.toLowerCase().includes(search.toLowerCase())||c.clientName?.toLowerCase().includes(search.toLowerCase())
 const matchRep=filterRep?c.salesRepId===filterRep:true
-const matchStatus=filterStatus?c.status===filterStatus:true
+const matchStatus=filterStatus?effStatus(c)===filterStatus:true
 return matchSearch&&matchRep&&matchStatus
 })
 
-const totalCommission=filtered.reduce((s,c)=>s+Number(c.commissionAmount||0),0)
+const totalCommission=filtered.filter(c=>effStatus(c)!=='cancelled').reduce((s,c)=>s+Number(c.commissionAmount||0),0)
 const paidCommission=filtered.filter(c=>c.status==='paid').reduce((s,c)=>s+Number(c.commissionAmount||0),0)
-const pendingCommission=filtered.filter(c=>c.status!=='paid').reduce((s,c)=>s+Number(c.commissionAmount||0),0)
+const pendingCommission=filtered.filter(c=>effStatus(c)==='pending').reduce((s,c)=>s+Number(c.commissionAmount||0),0)
 
 // Preview calc
 const preview=calcAmount?calcCommission(Number(calcAmount),tiers,bonus):null
@@ -253,16 +273,21 @@ return(
 <td style={{textAlign:'right',fontWeight:500}}>{Number(c.saleAmount||0).toLocaleString()} Ks</td>
 <td style={{textAlign:'right',fontWeight:700,color:'var(--primary)'}}>{Number(c.commissionAmount||0).toLocaleString()} Ks</td>
 <td style={{textAlign:'center'}}>
-{c.status==='paid'?(
-<span style={{background:'rgba(22,163,74,0.1)',color:'#16a34a',padding:'3px 10px',borderRadius:20,fontSize:11,fontWeight:600}}>Paid ✓</span>
-):(
-<span style={{background:'rgba(217,119,6,0.1)',color:'#d97706',padding:'3px 10px',borderRadius:20,fontSize:11,fontWeight:600}}>Pending</span>
-)}
+{(()=>{
+const es=effStatus(c)
+if(es==='paid')return<span style={{background:'rgba(22,163,74,0.1)',color:'#16a34a',padding:'3px 10px',borderRadius:20,fontSize:11,fontWeight:600}}>Paid ✓</span>
+if(es==='cancelled')return<span style={{background:'rgba(220,38,38,0.1)',color:'#dc2626',padding:'3px 10px',borderRadius:20,fontSize:11,fontWeight:600}}>Cancelled</span>
+if(es==='deferred')return<span style={{background:'rgba(100,116,139,0.12)',color:'#64748b',padding:'3px 10px',borderRadius:20,fontSize:11,fontWeight:600}} title={`${daysLeft(c)} days left`}>Deferred ({daysLeft(c)}d)</span>
+return<span style={{background:'rgba(217,119,6,0.1)',color:'#d97706',padding:'3px 10px',borderRadius:20,fontSize:11,fontWeight:600}}>Pending</span>
+})()}
 </td>
 <td style={{textAlign:'center'}}>
 <div style={{display:'flex',gap:4,justifyContent:'center'}}>
-{c.status!=='paid'&&(
+{effStatus(c)==='pending'&&(
 <button type="button" onClick={()=>handleMarkPaid(c.id)} title="Mark Paid" style={{background:'none',border:'none',cursor:'pointer',color:'#16a34a',padding:4,borderRadius:6}}><CheckCircle size={14}/></button>
+)}
+{(effStatus(c)==='deferred'||effStatus(c)==='pending')&&(
+<button type="button" onClick={()=>handleCancel(c.id)} title="Cancel (customer refund)" style={{background:'none',border:'none',cursor:'pointer',color:'#dc2626',padding:4,borderRadius:6}}><X size={14}/></button>
 )}
 </div>
 </td>
