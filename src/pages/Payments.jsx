@@ -39,6 +39,7 @@ export default function Payments(){
 const[requests,setRequests]=useState([])
 const[loading,setLoading]=useState(true)
 const[filter,setFilter]=useState('pending')
+const[monthFilter,setMonthFilter]=useState('')
 const[processing,setProcessing]=useState(null)
 const[proofModal,setProofModal]=useState(null)
 
@@ -176,12 +177,25 @@ setRequests(prev=>prev.map(r=>r.id===req.id?{...r,status:'refunded'}:r))
 setProcessing(null)
 }
 
-const filtered=requests.filter(r=>filter==='all'?true:r.status===filter)
+const filtered=requests.filter(r=>{
+const matchStatus=filter==='all'?true:r.status===filter
+let matchMonth=true
+if(monthFilter){
+let m=''
+if(r.createdAt?.seconds)m=new Date(r.createdAt.seconds*1000).toISOString().slice(0,7)
+matchMonth=m===monthFilter
+}
+return matchStatus&&matchMonth
+})
 const counts={
 pending:requests.filter(r=>r.status==='pending').length,
 approved:requests.filter(r=>r.status==='approved').length,
 rejected:requests.filter(r=>r.status==='rejected').length,
+refunded:requests.filter(r=>r.status==='refunded').length,
 }
+
+// month filter options — request တွေထဲက လ တွေ
+const monthOptions=[...new Set(requests.map(r=>r.createdAt?.seconds?new Date(r.createdAt.seconds*1000).toISOString().slice(0,7):'').filter(Boolean))].sort().reverse()
 
 const statusBadge=(s)=>{
 const map={pending:{bg:'#faeeda',c:'#d97706',t:'Pending'},approved:{bg:'#eaf3de',c:'#16a34a',t:'Approved'},rejected:{bg:'#fcebeb',c:'#dc2626',t:'Rejected'},refunded:{bg:'#fcebeb',c:'#dc2626',t:'Refunded'}}
@@ -202,11 +216,12 @@ return(
 )}
 
 {/* Stats */}
-<div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12,marginBottom:16}}>
+<div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:16}}>
 {[
 {label:'Pending',value:counts.pending,color:'#d97706'},
 {label:'Approved',value:counts.approved,color:'#16a34a'},
 {label:'Rejected',value:counts.rejected,color:'#dc2626'},
+{label:'Refunded',value:counts.refunded,color:'#dc2626'},
 ].map(({label,value,color})=>(
 <div key={label} className="card" style={{padding:16}}>
 <div style={{fontSize:11,color:'var(--text-3)',marginBottom:6}}>{label}</div>
@@ -215,14 +230,22 @@ return(
 ))}
 </div>
 
-{/* Filter tabs */}
-<div style={{display:'flex',gap:8,marginBottom:16}}>
-{['pending','approved','rejected','all'].map(f=>(
+{/* Filter tabs + month */}
+<div style={{display:'flex',gap:8,marginBottom:16,alignItems:'center',flexWrap:'wrap'}}>
+{['pending','approved','rejected','refunded','all'].map(f=>(
 <button key={f} onClick={()=>setFilter(f)} style={{
 padding:'6px 14px',borderRadius:20,border:'none',cursor:'pointer',fontSize:12,fontWeight:600,textTransform:'capitalize',
 background:filter===f?'var(--primary)':'#f1f5f9',color:filter===f?'white':'var(--text-2)',
 }}>{f}</button>
 ))}
+<div style={{flex:1}}/>
+<select value={monthFilter} onChange={e=>setMonthFilter(e.target.value)} className="form-input" style={{width:'auto',fontSize:12}}>
+<option value="">All months</option>
+{monthOptions.map(m=>{
+const d=new Date(m+'-01')
+return<option key={m} value={m}>{d.toLocaleDateString('en-GB',{month:'short',year:'numeric'})}</option>
+})}
+</select>
 </div>
 
 {/* List */}
