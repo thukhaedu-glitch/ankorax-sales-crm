@@ -5,6 +5,29 @@ import Layout from'../components/Layout'
 import{CreditCard,Check,X,Clock,ExternalLink,Building}from'lucide-react'
 
 const fmtMMK=(n)=>Number(n||0).toLocaleString('en-US')+' MMK'
+
+// Commission tiers — Commissions.jsx နဲ့ တူ
+const TIERS=[
+{min:0,max:300000,rate:0.15},
+{min:300001,max:800000,rate:0.25},
+{min:800001,max:1500000,rate:0.27},
+{min:1500001,max:3000000,rate:0.30},
+{min:3000001,max:5000000,rate:0.33},
+{min:5000001,max:10000000,rate:0.35},
+{min:10000001,max:Infinity,rate:0.35,bonus:500000},
+]
+const calcCommission=(amount)=>{
+let total=0,remaining=amount
+for(const tier of TIERS){
+if(remaining<=0)break
+const tierRange=tier.max===Infinity?remaining:Math.min(remaining,tier.max-tier.min+1)
+const tierAmount=Math.min(remaining,tierRange)
+total+=Math.round(tierAmount*tier.rate)
+remaining-=tierAmount
+}
+if(amount>10000000)total+=500000
+return total
+}
 const fmtDateTime=(ts)=>{
 if(!ts)return'-'
 try{const d=ts.seconds?new Date(ts.seconds*1000):new Date(ts);return d.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}catch{return'-'}
@@ -57,6 +80,28 @@ timestamp:serverTimestamp(),
 userEmail:'CRM Admin',
 })
 }catch(e){}
+// Auto commission — company ရဲ့ assigned sale rep ကို (coupon နုတ်ပြီး amount အပေါ်)
+try{
+const compSnap=await getDoc(doc(db,'companies',req.companyId))
+const comp=compSnap.exists()?compSnap.data():{}
+if(comp.assignedTo){
+const commAmount=calcCommission(Number(req.amount||0))
+await addDoc(collection(db,'commissions'),{
+salesRepId:comp.assignedTo,
+salesRepName:comp.assignedName||'',
+saleAmount:Number(req.amount||0),
+commissionAmount:commAmount,
+source:'subscription',
+companyId:req.companyId,
+companyName:comp.companyName||comp.name||'',
+plan:req.requestedPlan,
+couponCode:req.couponCode||'',
+note:`Subscription: ${req.requestedPlan}${req.couponCode?' (coupon '+req.couponCode+')':''}`,
+createdAt:new Date().toISOString(),
+createdBy:'CRM Auto',
+})
+}
+}catch(e){console.error('commission:',e)}
 setRequests(prev=>prev.map(r=>r.id===req.id?{...r,status:'approved'}:r))
 }catch(e){alert(e.message)}
 setProcessing(null)
@@ -160,7 +205,10 @@ background:filter===f?'var(--primary)':'#f1f5f9',color:filter===f?'white':'var(-
 <span style={{margin:'0 4px'}}>→</span>
 <span style={{fontSize:12,fontWeight:600,color:'var(--primary)',textTransform:'capitalize'}}>{req.requestedPlan}</span>
 </td>
-<td style={{fontSize:13,fontWeight:600}}>{fmtMMK(req.amount)}</td>
+<td style={{fontSize:13,fontWeight:600}}>
+{fmtMMK(req.amount)}
+{req.couponCode&&<div style={{fontSize:10,fontWeight:600,color:'#16a34a',background:'#eaf3de',padding:'1px 6px',borderRadius:10,marginTop:3,display:'inline-block'}}>🎟 {req.couponCode}</div>}
+</td>
 <td style={{fontSize:12,color:'var(--text-2)',maxWidth:160}}>{req.txnNote||'-'}</td>
 <td>
 {req.proofUrl?(
