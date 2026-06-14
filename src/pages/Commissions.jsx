@@ -110,7 +110,7 @@ return matchSearch&&matchRep&&matchStatus
 
 const totalCommission=filtered.reduce((s,c)=>s+Number(c.commissionAmount||0),0)
 const paidCommission=filtered.filter(c=>c.status==='paid').reduce((s,c)=>s+Number(c.commissionAmount||0),0)
-const pendingCommission=filtered.filter(c=>c.status==='pending').reduce((s,c)=>s+Number(c.commissionAmount||0),0)
+const pendingCommission=filtered.filter(c=>c.status!=='paid').reduce((s,c)=>s+Number(c.commissionAmount||0),0)
 
 // Preview calc
 const preview=calcAmount?calcCommission(Number(calcAmount),tiers,bonus):null
@@ -261,7 +261,7 @@ return(
 </td>
 <td style={{textAlign:'center'}}>
 <div style={{display:'flex',gap:4,justifyContent:'center'}}>
-{c.status==='pending'&&(
+{c.status!=='paid'&&(
 <button type="button" onClick={()=>handleMarkPaid(c.id)} title="Mark Paid" style={{background:'none',border:'none',cursor:'pointer',color:'#16a34a',padding:4,borderRadius:6}}><CheckCircle size={14}/></button>
 )}
 </div>
