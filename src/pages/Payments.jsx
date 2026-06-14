@@ -141,7 +141,40 @@ setRequests(prev=>prev.map(r=>r.id===req.id?{...r,status:'rejected'}:r))
 setProcessing(null)
 }
 
-const filtered=requests.filter(r=>filter==='all'?true:r.status===filter)
+// Refund — approved payment ကို ပြန်အမ်း (plan free + commission cancel)
+const handleRefund=async(req)=>{
+// 48hr window စစ် — approve လုပ်ပြီး 48 နာရီအတွင်းပဲ
+const approvedTime=req.approvedAt?.seconds?new Date(req.approvedAt.seconds*1000):(req.createdAt?.seconds?new Date(req.createdAt.seconds*1000):null)
+if(approvedTime){
+const hoursSince=(new Date()-approvedTime)/(1000*60*60)
+if(hoursSince>48){
+alert(`Refund window ကျော်လွန်ပါပြီ။\n\nPayment က ${Math.floor(hoursSince)} နာရီ ကြာပါပြီ (48hr limit)။ Refund လုပ်လို့ မရတော့ပါ။`)
+return
+}
+}
+if(!confirm(`"${req.requestedByEmail}" ရဲ့ ${fmtMMK(req.amount)} payment ကို refund လုပ်မလား?\n\n⚠️ Plan က free ပြန်ဖြစ်ပြီး၊ သက်ဆိုင်တဲ့ commission တွေ cancel ဖြစ်ပါမယ်။`))return
+setProcessing(req.id)
+try{
+// request status → refunded
+await updateDoc(doc(db,'upgradeRequests',req.id),{status:'refunded',refundedAt:serverTimestamp()})
+// company plan → free
+try{await updateDoc(doc(db,'companies',req.companyId),{plan:'free',subscriptionStatus:'expired',updatedAt:new Date().toISOString()})}catch(e){}
+// commission cancel (deferred/pending ဖြစ်နေတာ)
+try{
+const cSnap=await getDocs(query(collection(db,'commissions'),where('companyId','==',req.companyId)))
+for(const d of cSnap.docs){
+const c=d.data()
+if(c.status==='deferred'||c.status==='pending'){
+await updateDoc(doc(db,'commissions',d.id),{status:'cancelled',cancelledAt:new Date().toISOString(),cancelReason:'payment refunded'})
+}
+}
+}catch(e){}
+// audit log
+try{await addDoc(collection(db,'companies',req.companyId,'auditLogs'),{action:'refund',module:'subscription',description:`Payment refunded (${fmtMMK(req.amount)}) — plan reset to free`,timestamp:serverTimestamp(),userEmail:'CRM Admin'})}catch(e){}
+setRequests(prev=>prev.map(r=>r.id===req.id?{...r,status:'refunded'}:r))
+}catch(e){alert(e.message)}
+setProcessing(null)
+}
 const counts={
 pending:requests.filter(r=>r.status==='pending').length,
 approved:requests.filter(r=>r.status==='approved').length,
@@ -149,7 +182,7 @@ rejected:requests.filter(r=>r.status==='rejected').length,
 }
 
 const statusBadge=(s)=>{
-const map={pending:{bg:'#faeeda',c:'#d97706',t:'Pending'},approved:{bg:'#eaf3de',c:'#16a34a',t:'Approved'},rejected:{bg:'#fcebeb',c:'#dc2626',t:'Rejected'}}
+const map={pending:{bg:'#faeeda',c:'#d97706',t:'Pending'},approved:{bg:'#eaf3de',c:'#16a34a',t:'Approved'},rejected:{bg:'#fcebeb',c:'#dc2626',t:'Rejected'},refunded:{bg:'#fcebeb',c:'#dc2626',t:'Refunded'}}
 const x=map[s]||map.pending
 return<span style={{fontSize:11,fontWeight:600,padding:'3px 10px',borderRadius:20,background:x.bg,color:x.c}}>{x.t}</span>
 }
@@ -248,8 +281,25 @@ background:filter===f?'var(--primary)':'#f1f5f9',color:filter===f?'white':'var(-
 <X size={13}/>
 </button>
 </div>
+):req.status==='approved'?(
+<div style={{display:'flex',gap:6,justifyContent:'center',alignItems:'center'}}>
+<span style={{fontSize:11,color:'#16a34a'}}>✓ Done</span>
+{(()=>{
+const at=req.approvedAt?.seconds?new Date(req.approvedAt.seconds*1000):(req.createdAt?.seconds?new Date(req.createdAt.seconds*1000):null)
+const withinWindow=!at||((new Date()-at)/(1000*60*60))<=48
+return withinWindow?(
+<button onClick={()=>handleRefund(req)} disabled={processing===req.id} title="Refund (48hr window)" style={{background:'#fcebeb',color:'#dc2626',border:'none',borderRadius:6,padding:'4px 10px',cursor:'pointer',fontSize:11,fontWeight:600}}>
+{processing===req.id?'...':'Refund'}
+</button>
 ):(
-<span style={{fontSize:11,color:'var(--text-3)'}}>{req.status==='approved'?'✓ Done':req.rejectReason||'Rejected'}</span>
+<span style={{fontSize:10,color:'var(--text-3)'}} title="48hr refund window passed">⏱ Window closed</span>
+)
+})()}
+</div>
+):req.status==='refunded'?(
+<span style={{fontSize:11,fontWeight:600,color:'#dc2626',background:'#fcebeb',padding:'3px 10px',borderRadius:20}}>Refunded</span>
+):(
+<span style={{fontSize:11,color:'var(--text-3)'}}>{req.rejectReason||'Rejected'}</span>
 )}
 </td>
 </tr>
