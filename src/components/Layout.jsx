@@ -3,7 +3,7 @@ import{auth}from'../firebase'
 import{signOut}from'firebase/auth'
 import{useLocation,useNavigate}from'react-router-dom'
 
-import{LayoutDashboard,Users,UserPlus,Calendar,DollarSign,Menu,X,LogOut,Target,UserCheck,CreditCard,BarChart2,Settings,Ticket,Percent}from'lucide-react'
+import{LayoutDashboard,Users,UserPlus,Calendar,DollarSign,Menu,X,LogOut,Target,UserCheck,CreditCard,BarChart2,Settings,Ticket,Percent,FileText}from'lucide-react'
 
 
 const NAV=[
@@ -19,6 +19,7 @@ const NAV=[
 {path:'/plan-management',label:'Plan Management',icon:Settings},
 {path:'/coupons',label:'Coupons',icon:Ticket},
 {path:'/commission-settings',label:'Commission Settings',icon:Percent},
+{path:'/receipt-settings',label:'Receipt Settings',icon:FileText},
 ]
 
 const Logo=()=>(
