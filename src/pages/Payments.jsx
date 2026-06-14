@@ -98,13 +98,17 @@ if(cfg.bonus)bonus=cfg.bonus
 }
 }catch(e){}
 const commAmount=calcCommission(Number(req.amount||0),tiers,bonus)
+const deferDays=10
+const deferUntil=new Date()
+deferUntil.setDate(deferUntil.getDate()+deferDays)
 await addDoc(collection(db,'commissions'),{
 salesRepId:comp.assignedTo,
 salesRepName:comp.assignedName||'',
 saleAmount:Number(req.amount||0),
 commissionAmount:commAmount,
 source:'subscription',
-status:'pending',
+status:'deferred',
+deferredUntil:deferUntil.toISOString(),
 month:new Date().toISOString().slice(0,7),
 companyId:req.companyId,
 companyName:comp.companyName||comp.name||'',
