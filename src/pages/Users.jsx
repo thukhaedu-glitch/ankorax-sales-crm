@@ -31,18 +31,23 @@ const[createModal,setCreateModal]=useState(false)
 const[createForm,setCreateForm]=useState({companyName:'',ownerName:'',email:'',phone:''})
 const[createResult,setCreateResult]=useState(null)
 const[creating,setCreating]=useState(false)
+const[planKeys,setPlanKeys]=useState(['free','starter','growth','business'])
 
 useEffect(()=>{
 const load=async()=>{
 try{
-const[compSnap,crmSnap,repSnap]=await Promise.all([
+const[compSnap,crmSnap,repSnap,planSnap]=await Promise.all([
 getDocs(collection(db,'companies')),
 getDocs(collection(db,'crmClients')),
 getDocs(collection(db,'salesReps')),
+getDoc(doc(db,'config','plans')),
 ])
 setCompanies(compSnap.docs.map(d=>({id:d.id,...d.data()})))
 setCrmClients(crmSnap.docs.map(d=>({id:d.id,...d.data()})))
 setSalesReps(repSnap.docs.map(d=>({id:d.id,...d.data()})))
+if(planSnap.exists()&&planSnap.data().plans){
+setPlanKeys(planSnap.data().plans.map(p=>p.key))
+}
 }catch(e){console.error(e)}
 setLoading(false)
 }
@@ -305,41 +310,6 @@ setDetailModal({...detailModal,plan:newPlan})
 }catch(e){alert(e.message)}
 }
 
-// Refund request — customer တောင်းတာ mark
-const handleRefundRequest=async(user)=>{
-const reason=prompt('Refund request အကြောင်းရင်း (optional):')
-if(reason===null)return
-try{
-await updateDoc(doc(db,'companies',user.id),{refundStatus:'requested',refundReason:reason||'',refundRequestedAt:new Date().toISOString()})
-setCompanies(prev=>prev.map(c=>c.id===user.id?{...c,refundStatus:'requested'}:c))
-setDetailModal({...detailModal,refundStatus:'requested',refundReason:reason||''})
-}catch(e){alert(e.message)}
-}
-
-// Refunded — ပိုက်ဆံ ပြန်ပေးပြီး (commission ပါ cancel)
-const handleRefunded=async(user)=>{
-if(!confirm(`"${user.companyName}" ကို refund ပြီးကြောင်း mark လုပ်မလား?\n\n⚠️ သက်ဆိုင်တဲ့ commission တွေ cancel ဖြစ်ပြီး၊ plan က free ပြန်ဖြစ်ပါမယ်။`))return
-try{
-await updateDoc(doc(db,'companies',user.id),{
-refundStatus:'refunded',refundedAt:new Date().toISOString(),
-plan:'free',subscriptionStatus:'expired',
-updatedAt:new Date().toISOString(),
-})
-await cancelCompanyCommissions(user.id)
-try{await addDoc(collection(db,'companies',user.id,'auditLogs'),{action:'refund',module:'subscription',description:'Payment refunded — plan reset to free',timestamp:serverTimestamp(),userEmail:'CRM Admin'})}catch(e){}
-setCompanies(prev=>prev.map(c=>c.id===user.id?{...c,refundStatus:'refunded',plan:'free',subscriptionStatus:'expired'}:c))
-setDetailModal({...detailModal,refundStatus:'refunded',plan:'free'})
-}catch(e){alert(e.message)}
-}
-
-const handleClearRefund=async(user)=>{
-try{
-await updateDoc(doc(db,'companies',user.id),{refundStatus:deleteField()})
-setCompanies(prev=>prev.map(c=>c.id===user.id?{...c,refundStatus:''}:c))
-setDetailModal({...detailModal,refundStatus:''})
-}catch(e){alert(e.message)}
-}
-
 const handleBlockCompany=async(user)=>{
 const label=user.companyName||user.email||user.id
 const isBlocked=user.status==='blocked'
@@ -592,35 +562,15 @@ return(
 <div style={{marginBottom:20,padding:16,background:'#f8fafc',borderRadius:10,border:'0.5px solid var(--border)'}}>
 <div style={{fontWeight:600,fontSize:13,marginBottom:12,display:'flex',alignItems:'center',gap:6}}>
 <CreditCard size={14} color="var(--primary)"/>Subscription Actions
-{detailModal.refundStatus==='requested'&&<span style={{fontSize:10,fontWeight:600,background:'#faeeda',color:'#d97706',padding:'2px 8px',borderRadius:10}}>Refund Requested</span>}
-{detailModal.refundStatus==='refunded'&&<span style={{fontSize:10,fontWeight:600,background:'#fcebeb',color:'#dc2626',padding:'2px 8px',borderRadius:10}}>Refunded</span>}
 </div>
-
-{/* Downgrade */}
-<div style={{display:'flex',alignItems:'center',gap:10,marginBottom:12,flexWrap:'wrap'}}>
+<div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
 <span style={{fontSize:12,color:'var(--text-2)',minWidth:80}}>Downgrade:</span>
 <select value="" onChange={e=>handleDowngrade(detailModal,e.target.value)} className="form-input" style={{width:'auto',fontSize:12}}>
 <option value="">— Select plan —</option>
-{['free','starter','growth','business'].filter(p=>p!==detailModal.plan).map(p=><option key={p} value={p} style={{textTransform:'capitalize'}}>{p}</option>)}
+{planKeys.filter(p=>p!==detailModal.plan).map(p=><option key={p} value={p} style={{textTransform:'capitalize'}}>{p}</option>)}
 </select>
 </div>
-
-{/* Refund buttons */}
-<div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
-{detailModal.refundStatus!=='refunded'&&detailModal.refundStatus!=='requested'&&(
-<button type="button" onClick={()=>handleRefundRequest(detailModal)} style={{fontSize:12,fontWeight:600,padding:'7px 14px',borderRadius:8,border:'1px solid #d97706',background:'white',color:'#d97706',cursor:'pointer'}}>Mark Refund Requested</button>
-)}
-{detailModal.refundStatus==='requested'&&(
-<>
-<button type="button" onClick={()=>handleRefunded(detailModal)} style={{fontSize:12,fontWeight:600,padding:'7px 14px',borderRadius:8,border:'none',background:'#dc2626',color:'white',cursor:'pointer'}}>Confirm Refunded</button>
-<button type="button" onClick={()=>handleClearRefund(detailModal)} style={{fontSize:12,fontWeight:600,padding:'7px 14px',borderRadius:8,border:'1px solid var(--border)',background:'white',color:'var(--text-2)',cursor:'pointer'}}>Cancel Request</button>
-</>
-)}
-{detailModal.refundStatus==='refunded'&&(
-<div style={{fontSize:12,color:'var(--text-3)'}}>✓ Refunded — plan reset to free, commissions cancelled</div>
-)}
-</div>
-{detailModal.refundReason&&<div style={{fontSize:11,color:'var(--text-3)',marginTop:8}}>Reason: {detailModal.refundReason}</div>}
+<div style={{fontSize:11,color:'var(--text-3)',marginTop:8}}>💡 Refund လုပ်ချင်ရင် Payments page မှာ လုပ်ပါ။</div>
 </div>
 )}
 
