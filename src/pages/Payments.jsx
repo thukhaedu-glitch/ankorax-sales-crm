@@ -6,26 +6,28 @@ import{CreditCard,Check,X,Clock,ExternalLink,Building}from'lucide-react'
 
 const fmtMMK=(n)=>Number(n||0).toLocaleString('en-US')+' MMK'
 
-// Commission tiers — Commissions.jsx နဲ့ တူ
-const TIERS=[
-{min:0,max:300000,rate:0.15},
-{min:300001,max:800000,rate:0.25},
-{min:800001,max:1500000,rate:0.27},
-{min:1500001,max:3000000,rate:0.30},
-{min:3000001,max:5000000,rate:0.33},
-{min:5000001,max:10000000,rate:0.35},
-{min:10000001,max:Infinity,rate:0.35,bonus:500000},
+// Commission — Firestore config/commission ကနေ ဖတ် (fallback ပါ)
+const DEFAULT_TIERS=[
+{min:0,max:300000,rate:15},
+{min:300001,max:800000,rate:25},
+{min:800001,max:1500000,rate:27},
+{min:1500001,max:3000000,rate:30},
+{min:3000001,max:5000000,rate:33},
+{min:5000001,max:10000000,rate:35},
+{min:10000001,max:-1,rate:35},
 ]
-const calcCommission=(amount)=>{
+const DEFAULT_BONUS={threshold:10000000,amount:500000}
+const calcCommission=(amount,tiers,bonus)=>{
 let total=0,remaining=amount
-for(const tier of TIERS){
+for(const tier of tiers){
 if(remaining<=0)break
-const tierRange=tier.max===Infinity?remaining:Math.min(remaining,tier.max-tier.min+1)
+const max=tier.max===-1?Infinity:tier.max
+const tierRange=max===Infinity?remaining:Math.min(remaining,max-tier.min+1)
 const tierAmount=Math.min(remaining,tierRange)
-total+=Math.round(tierAmount*tier.rate)
+total+=Math.round(tierAmount*(tier.rate/100))
 remaining-=tierAmount
 }
-if(amount>10000000)total+=500000
+if(bonus&&amount>bonus.threshold)total+=bonus.amount
 return total
 }
 const fmtDateTime=(ts)=>{
@@ -85,7 +87,17 @@ try{
 const compSnap=await getDoc(doc(db,'companies',req.companyId))
 const comp=compSnap.exists()?compSnap.data():{}
 if(comp.assignedTo){
-const commAmount=calcCommission(Number(req.amount||0))
+// commission config Firestore ကနေ ဖတ်
+let tiers=DEFAULT_TIERS,bonus=DEFAULT_BONUS
+try{
+const cfgSnap=await getDoc(doc(db,'config','commission'))
+if(cfgSnap.exists()){
+const cfg=cfgSnap.data()
+if(cfg.tiers&&cfg.tiers.length)tiers=cfg.tiers
+if(cfg.bonus)bonus=cfg.bonus
+}
+}catch(e){}
+const commAmount=calcCommission(Number(req.amount||0),tiers,bonus)
 await addDoc(collection(db,'commissions'),{
 salesRepId:comp.assignedTo,
 salesRepName:comp.assignedName||'',
