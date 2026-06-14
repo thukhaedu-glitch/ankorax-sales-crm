@@ -1,33 +1,37 @@
 import{useState,useEffect}from'react'
-import{db,auth}from'../firebase'
-import{collection,getDocs,addDoc,updateDoc,deleteDoc,doc}from'firebase/firestore'
+import{db}from'../firebase'
+import{collection,getDocs,updateDoc,doc,getDoc}from'firebase/firestore'
 import Layout from'../components/Layout'
-import{Plus,X,Save,Trash2,Edit,DollarSign,TrendingUp,Calculator,Search,CheckCircle}from'lucide-react'
+import{DollarSign,TrendingUp,Calculator,Search,CheckCircle,X}from'lucide-react'
 
-const TIERS=[
-{min:0,max:300000,rate:0.15,label:'0 – 300,000'},
-{min:300001,max:800000,rate:0.25,label:'300,001 – 800,000'},
-{min:800001,max:1500000,rate:0.27,label:'800,001 – 1,500,000'},
-{min:1500001,max:3000000,rate:0.30,label:'1,500,001 – 3,000,000'},
-{min:3000001,max:5000000,rate:0.33,label:'3,000,001 – 5,000,000'},
-{min:5000001,max:10000000,rate:0.35,label:'5,000,001 – 10,000,000'},
-{min:10000001,max:Infinity,rate:0.35,label:'10,000,000+',bonus:500000},
+// default — config/commission မရှိရင် ဒါ သုံး
+const DEFAULT_TIERS=[
+{min:0,max:300000,rate:15},
+{min:300001,max:800000,rate:25},
+{min:800001,max:1500000,rate:27},
+{min:1500001,max:3000000,rate:30},
+{min:3000001,max:5000000,rate:33},
+{min:5000001,max:10000000,rate:35},
+{min:10000001,max:-1,rate:35},
 ]
+const DEFAULT_BONUS={threshold:10000000,amount:500000}
 
-const calcCommission=(amount)=>{
+// tiers + bonus ကို parameter အဖြစ် လက်ခံ
+const calcCommission=(amount,tiers,bonus)=>{
 let total=0
 let breakdown=[]
 let remaining=amount
 
-for(const tier of TIERS){
+for(const tier of tiers){
 if(remaining<=0)break
-const tierRange=tier.max===Infinity?remaining:Math.min(remaining,tier.max-tier.min+1)
+const max=tier.max===-1?Infinity:tier.max
+const tierRange=max===Infinity?remaining:Math.min(remaining,max-tier.min+1)
 const tierAmount=Math.min(remaining,tierRange)
-const comm=Math.round(tierAmount*tier.rate)
+const comm=Math.round(tierAmount*(tier.rate/100))
 if(tierAmount>0){
 breakdown.push({
-label:tier.label,
-rate:`${(tier.rate*100).toFixed(0)}%`,
+label:max===Infinity?`${tier.min.toLocaleString()}+`:`${tier.min.toLocaleString()} – ${max.toLocaleString()}`,
+rate:`${tier.rate}%`,
 amount:tierAmount,
 commission:comm,
 })
@@ -37,9 +41,9 @@ remaining-=tierAmount
 }
 
 // Bonus
-if(amount>10000000){
-breakdown.push({label:'Bonus (10M+)',rate:'Flat',amount:0,commission:500000})
-total+=500000
+if(bonus&&amount>bonus.threshold){
+breakdown.push({label:`Bonus (${(bonus.threshold/1000000)}M+)`,rate:'Flat',amount:0,commission:bonus.amount})
+total+=bonus.amount
 }
 
 return{total,breakdown}
@@ -58,6 +62,8 @@ const[selected,setSelected]=useState(null)
 const[saving,setSaving]=useState(false)
 const[calcAmount,setCalcAmount]=useState('')
 const[showCalc,setShowCalc]=useState(false)
+const[tiers,setTiers]=useState(DEFAULT_TIERS)
+const[bonus,setBonus]=useState(DEFAULT_BONUS)
 const[form,setForm]=useState({
 salesRepId:'',salesRepName:'',
 clientId:'',clientName:'',
@@ -69,61 +75,26 @@ note:'',status:'pending',
 useEffect(()=>{
 const load=async()=>{
 try{
-const[cSnap,rSnap,clSnap]=await Promise.all([
+const[cSnap,rSnap,clSnap,cfgSnap]=await Promise.all([
 getDocs(collection(db,'commissions')),
 getDocs(collection(db,'salesReps')),
 getDocs(collection(db,'crmClients')),
+getDoc(doc(db,'config','commission')),
 ])
 setCommissions(cSnap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.month||'').localeCompare(a.month||'')))
 setSalesReps(rSnap.docs.map(d=>({id:d.id,...d.data()})))
 setClients(clSnap.docs.map(d=>({id:d.id,...d.data()})))
+if(cfgSnap.exists()){
+const cfg=cfgSnap.data()
+if(cfg.tiers&&cfg.tiers.length)setTiers(cfg.tiers)
+if(cfg.bonus)setBonus(cfg.bonus)
+}
 }catch(e){console.error(e)}
 setLoading(false)
 }
 load()
 },[])
 
-const openAdd=()=>{
-setForm({salesRepId:'',salesRepName:'',clientId:'',clientName:'',saleAmount:0,month:new Date().toISOString().slice(0,7),note:'',status:'pending'})
-setSelected(null)
-setModal(true)
-}
-
-const openEdit=(c)=>{
-setForm({
-salesRepId:c.salesRepId||'',salesRepName:c.salesRepName||'',
-clientId:c.clientId||'',clientName:c.clientName||'',
-saleAmount:c.saleAmount||0,
-month:c.month||'',note:c.note||'',status:c.status||'pending',
-})
-setSelected(c)
-setModal(true)
-}
-
-const handleSave=async()=>{
-if(!form.salesRepId||!form.saleAmount){alert('Sales rep and amount required');return}
-setSaving(true)
-try{
-const{total,breakdown}=calcCommission(Number(form.saleAmount))
-const data={...form,saleAmount:Number(form.saleAmount),commissionAmount:total,breakdown,updatedAt:new Date().toISOString()}
-if(!selected){
-await addDoc(collection(db,'commissions'),{...data,createdAt:new Date().toISOString(),createdBy:auth.currentUser.uid})
-const snap=await getDocs(collection(db,'commissions'))
-setCommissions(snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.month||'').localeCompare(a.month||'')))
-}else{
-await updateDoc(doc(db,'commissions',selected.id),data)
-setCommissions(prev=>prev.map(c=>c.id===selected.id?{...c,...data}:c))
-}
-setModal(false)
-}catch(e){alert(e.message)}
-setSaving(false)
-}
-
-const handleDelete=async(id)=>{
-if(!confirm('Delete?'))return
-await deleteDoc(doc(db,'commissions',id))
-setCommissions(prev=>prev.filter(c=>c.id!==id))
-}
 
 const handleMarkPaid=async(id)=>{
 await updateDoc(doc(db,'commissions',id),{status:'paid',paidAt:new Date().toISOString()})
@@ -142,101 +113,13 @@ const paidCommission=filtered.filter(c=>c.status==='paid').reduce((s,c)=>s+Numbe
 const pendingCommission=filtered.filter(c=>c.status==='pending').reduce((s,c)=>s+Number(c.commissionAmount||0),0)
 
 // Preview calc
-const preview=calcAmount?calcCommission(Number(calcAmount)):null
+const preview=calcAmount?calcCommission(Number(calcAmount),tiers,bonus):null
 
 if(loading)return<div style={{display:'flex',alignItems:'center',justifyContent:'center',minHeight:'100vh'}}>Loading...</div>
 
-const formPreview=form.saleAmount?calcCommission(Number(form.saleAmount)):null
 
 return(
 <Layout title="Commissions">
-
-{/* Add/Edit Modal */}
-{modal&&(
-<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',padding:20}}>
-<div style={{background:'white',borderRadius:16,width:'100%',maxWidth:560,maxHeight:'90vh',overflowY:'auto',boxShadow:'0 20px 60px rgba(0,0,0,0.2)'}}>
-<div style={{padding:'20px 24px',borderBottom:'0.5px solid #f1f5f9',display:'flex',justifyContent:'space-between',alignItems:'center',position:'sticky',top:0,background:'white'}}>
-<div style={{fontWeight:600,fontSize:15}}>{selected?'Edit Commission':'New Commission'}</div>
-<button type="button" onClick={()=>setModal(false)} style={{background:'none',border:'none',cursor:'pointer',color:'var(--text-3)'}}><X size={18}/></button>
-</div>
-<div style={{padding:24,display:'grid',gap:12}}>
-<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
-<div>
-<label style={{fontSize:12,fontWeight:500,color:'var(--text-2)',display:'block',marginBottom:4}}>Sales Rep *</label>
-<select className="form-input" value={form.salesRepId} onChange={e=>{
-const rep=salesReps.find(r=>r.id===e.target.value)
-setForm(f=>({...f,salesRepId:e.target.value,salesRepName:rep?.name||''}))
-}}>
-<option value="">— Select Rep —</option>
-{salesReps.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}
-</select>
-</div>
-<div>
-<label style={{fontSize:12,fontWeight:500,color:'var(--text-2)',display:'block',marginBottom:4}}>Client</label>
-<select className="form-input" value={form.clientId} onChange={e=>{
-const cl=clients.find(c=>c.id===e.target.value)
-setForm(f=>({...f,clientId:e.target.value,clientName:cl?.companyName||''}))
-}}>
-<option value="">— Select Client —</option>
-{clients.map(c=><option key={c.id} value={c.id}>{c.companyName}</option>)}
-</select>
-</div>
-<div>
-<label style={{fontSize:12,fontWeight:500,color:'var(--text-2)',display:'block',marginBottom:4}}>Sale Amount (Ks) *</label>
-<input className="form-input" type="number" value={form.saleAmount} onChange={e=>setForm(f=>({...f,saleAmount:e.target.value}))} style={{textAlign:'right'}}/>
-</div>
-<div>
-<label style={{fontSize:12,fontWeight:500,color:'var(--text-2)',display:'block',marginBottom:4}}>Month</label>
-<input className="form-input" type="month" value={form.month} onChange={e=>setForm(f=>({...f,month:e.target.value}))}/>
-</div>
-<div style={{gridColumn:'1/-1'}}>
-<label style={{fontSize:12,fontWeight:500,color:'var(--text-2)',display:'block',marginBottom:4}}>Note</label>
-<input className="form-input" value={form.note} onChange={e=>setForm(f=>({...f,note:e.target.value}))} placeholder="Optional..."/>
-</div>
-</div>
-
-{/* Live Preview */}
-{formPreview&&(
-<div style={{background:'#f8fafc',borderRadius:10,padding:14,border:'0.5px solid var(--border)'}}>
-<div style={{fontSize:12,fontWeight:600,color:'var(--text-2)',marginBottom:10,textTransform:'uppercase',letterSpacing:'0.05em'}}>Commission Breakdown</div>
-<table style={{width:'100%',borderCollapse:'collapse'}}>
-<thead>
-<tr>
-{['Tier','Rate','Amount','Commission'].map(h=>(
-<th key={h} style={{fontSize:10,fontWeight:600,color:'var(--text-3)',textTransform:'uppercase',padding:'4px 8px',textAlign:'right',background:'transparent',borderBottom:'0.5px solid #e2e8f0'}}>{h}</th>
-))}
-</tr>
-</thead>
-<tbody>
-{formPreview.breakdown.map((b,i)=>(
-<tr key={i}>
-<td style={{fontSize:11,padding:'4px 8px',color:'var(--text-2)'}}>{b.label}</td>
-<td style={{fontSize:11,padding:'4px 8px',textAlign:'right',color:'var(--primary)',fontWeight:600}}>{b.rate}</td>
-<td style={{fontSize:11,padding:'4px 8px',textAlign:'right'}}>{b.amount.toLocaleString()}</td>
-<td style={{fontSize:11,padding:'4px 8px',textAlign:'right',fontWeight:600,color:'#16a34a'}}>{b.commission.toLocaleString()}</td>
-</tr>
-))}
-</tbody>
-<tfoot>
-<tr style={{borderTop:'1.5px solid #e2e8f0'}}>
-<td colSpan={3} style={{fontSize:12,fontWeight:700,padding:'6px 8px'}}>Total Commission</td>
-<td style={{fontSize:14,fontWeight:700,color:'var(--primary)',textAlign:'right',padding:'6px 8px'}}>{formPreview.total.toLocaleString()} Ks</td>
-</tr>
-</tfoot>
-</table>
-</div>
-)}
-
-<div style={{display:'flex',gap:8,justifyContent:'flex-end',paddingTop:8}}>
-<button type="button" onClick={()=>setModal(false)} className="btn btn-ghost">Cancel</button>
-<button type="button" onClick={handleSave} disabled={saving} className="btn btn-primary">
-<Save size={14}/>{saving?'Saving...':selected?'Update':'Add'}
-</button>
-</div>
-</div>
-</div>
-</div>
-)}
 
 {/* Calculator Modal */}
 {showCalc&&(
@@ -255,12 +138,18 @@ setForm(f=>({...f,clientId:e.target.value,clientName:cl?.companyName||''}))
 {/* Tier Table */}
 <div style={{marginBottom:16,background:'#f8fafc',borderRadius:10,padding:12}}>
 <div style={{fontSize:11,fontWeight:700,color:'var(--text-3)',marginBottom:8,textTransform:'uppercase'}}>Commission Tiers</div>
-{TIERS.map((t,i)=>(
+{tiers.map((t,i)=>(
 <div key={i} style={{display:'flex',justifyContent:'space-between',fontSize:12,padding:'3px 0',borderBottom:'0.5px solid #e2e8f0'}}>
-<span style={{color:'var(--text-2)'}}>{t.label}</span>
-<span style={{fontWeight:600,color:'var(--primary)'}}>{(t.rate*100).toFixed(0)}%{t.bonus?` + ${t.bonus.toLocaleString()} Bonus`:''}</span>
+<span style={{color:'var(--text-2)'}}>{t.max===-1?`${t.min.toLocaleString()}+`:`${t.min.toLocaleString()} – ${t.max.toLocaleString()}`}</span>
+<span style={{fontWeight:600,color:'var(--primary)'}}>{t.rate}%</span>
 </div>
 ))}
+{bonus&&(
+<div style={{display:'flex',justifyContent:'space-between',fontSize:12,padding:'3px 0',marginTop:2}}>
+<span style={{color:'var(--text-2)'}}>Bonus ({(bonus.threshold/1000000)}M+)</span>
+<span style={{fontWeight:600,color:'#16a34a'}}>+{bonus.amount.toLocaleString()}</span>
+</div>
+)}
 </div>
 
 {preview&&(
@@ -334,7 +223,6 @@ setForm(f=>({...f,clientId:e.target.value,clientName:cl?.companyName||''}))
 <button type="button" onClick={()=>setShowCalc(true)} className="btn btn-ghost" style={{fontSize:12}}>
 <Calculator size={14}/>Calculator
 </button>
-<button type="button" onClick={openAdd} className="btn btn-primary"><Plus size={14}/>New</button>
 </div>
 </div>
 
@@ -376,8 +264,6 @@ setForm(f=>({...f,clientId:e.target.value,clientName:cl?.companyName||''}))
 {c.status==='pending'&&(
 <button type="button" onClick={()=>handleMarkPaid(c.id)} title="Mark Paid" style={{background:'none',border:'none',cursor:'pointer',color:'#16a34a',padding:4,borderRadius:6}}><CheckCircle size={14}/></button>
 )}
-<button type="button" onClick={()=>openEdit(c)} style={{background:'none',border:'none',cursor:'pointer',color:'var(--text-2)',padding:4,borderRadius:6}}><Edit size={14}/></button>
-<button type="button" onClick={()=>handleDelete(c.id)} style={{background:'none',border:'none',cursor:'pointer',color:'var(--danger)',padding:4,borderRadius:6}}><Trash2 size={14}/></button>
 </div>
 </td>
 </tr>
