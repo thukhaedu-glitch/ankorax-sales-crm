@@ -1,9 +1,9 @@
 import{useState,useEffect}from'react'
 import{db,secondaryAuth}from'../firebase'
-import{collection,getDocs,getDoc,updateDoc,doc,addDoc,setDoc,query,orderBy,limit,deleteField,deleteDoc,serverTimestamp}from'firebase/firestore'
+import{collection,getDocs,getDoc,updateDoc,doc,addDoc,setDoc,query,where,orderBy,limit,deleteField,deleteDoc,serverTimestamp}from'firebase/firestore'
 import{createUserWithEmailAndPassword,signOut}from'firebase/auth'
 import Layout from'../components/Layout'
-import{Search,Users,Eye,UserCheck,X,Save,Clock,Building,Shield,Phone,Mail,Trash2,Plus,Copy}from'lucide-react'
+import{Search,Users,Eye,UserCheck,X,Save,Clock,Building,Shield,Phone,Mail,Trash2,Plus,Copy,Ban,CreditCard}from'lucide-react'
 
 const PLANS=['Starter','Growth','Business']
 const STATUS_COLORS={active:'#16a34a',expired:'#d97706',blocked:'#dc2626',hold:'#64748b'}
@@ -55,6 +55,10 @@ const memberEntries=Object.entries(c.members||{})
 const ownerEntry=memberEntries.find(([uid,role])=>role==='owner')
 const adminEntries=memberEntries.filter(([uid,role])=>role==='admin')
 const staffEntries=memberEntries.filter(([uid,role])=>role==='staff')
+const rawStatus=c.subscriptionStatus||'active'
+const endD=c.subscriptionEnd||c.endDate||''
+// Auto-expired: end date ကျော်ပြီး status က active/hold ဆို expired ပြ
+const computedStatus=(endD&&new Date(endD)<new Date()&&(rawStatus==='active'||rawStatus==='hold'))?'expired':rawStatus
 return{
 id:c.id,
 companyName:c.companyName||c.name||'Unknown',
@@ -63,7 +67,8 @@ email:c.ownerEmail||c.email||c.contactEmail||'-',
 phone:c.phone||c.ownerPhone||c.contactPhone||'-',
 ownerUid:ownerEntry?.[0]||'',
 plan:c.plan||c.subscriptionPlan||'Starter',
-status:c.subscriptionStatus||'active',
+status:computedStatus,
+rawStatus,
 assignedTo:c.assignedTo||'',
 assignedName:c.assignedName||'',
 startDate:c.subscriptionStart||c.startDate||(c.createdAt?.seconds?new Date(c.createdAt.seconds*1000).toISOString().split('T')[0]:''),
@@ -76,6 +81,8 @@ ownerCount:ownerEntry?1:0,
 adminCount:adminEntries.length,
 staffCount:staffEntries.length,
 _source:'main',
+refundStatus:c.refundStatus||'',
+refundReason:c.refundReason||'',
 _raw:c,
 }
 })
@@ -273,12 +280,93 @@ setCompanies(prev=>prev.map(c=>c.id===detailModal.id?{...c,members:newMembers}:c
 }
 
 // Delete whole company/client (irreversible)
+// company cancel ဖြစ်ရင် — deferred/pending commission တွေ auto cancel (rep မရအောင်)
+const cancelCompanyCommissions=async(companyId)=>{
+try{
+const snap=await getDocs(query(collection(db,'commissions'),where('companyId','==',companyId)))
+for(const d of snap.docs){
+const c=d.data()
+if(c.status==='deferred'||c.status==='pending'){
+await updateDoc(doc(db,'commissions',d.id),{status:'cancelled',cancelledAt:new Date().toISOString(),cancelReason:'company blocked/deleted'})
+}
+}
+}catch(e){console.error('cancel commissions:',e)}
+}
+
+// Downgrade — plan လျှော့
+const handleDowngrade=async(user,newPlan)=>{
+if(!newPlan||newPlan===user.plan)return
+if(!confirm(`"${user.companyName}" ကို ${user.plan} → ${newPlan} downgrade လုပ်မလား?`))return
+try{
+await updateDoc(doc(db,'companies',user.id),{plan:newPlan,updatedAt:new Date().toISOString()})
+try{await addDoc(collection(db,'companies',user.id,'auditLogs'),{action:'downgrade',module:'subscription',description:`Plan downgraded ${user.plan} → ${newPlan} (via CRM)`,timestamp:serverTimestamp(),userEmail:'CRM Admin'})}catch(e){}
+setCompanies(prev=>prev.map(c=>c.id===user.id?{...c,plan:newPlan}:c))
+setDetailModal({...detailModal,plan:newPlan})
+}catch(e){alert(e.message)}
+}
+
+// Refund request — customer တောင်းတာ mark
+const handleRefundRequest=async(user)=>{
+const reason=prompt('Refund request အကြောင်းရင်း (optional):')
+if(reason===null)return
+try{
+await updateDoc(doc(db,'companies',user.id),{refundStatus:'requested',refundReason:reason||'',refundRequestedAt:new Date().toISOString()})
+setCompanies(prev=>prev.map(c=>c.id===user.id?{...c,refundStatus:'requested'}:c))
+setDetailModal({...detailModal,refundStatus:'requested',refundReason:reason||''})
+}catch(e){alert(e.message)}
+}
+
+// Refunded — ပိုက်ဆံ ပြန်ပေးပြီး (commission ပါ cancel)
+const handleRefunded=async(user)=>{
+if(!confirm(`"${user.companyName}" ကို refund ပြီးကြောင်း mark လုပ်မလား?\n\n⚠️ သက်ဆိုင်တဲ့ commission တွေ cancel ဖြစ်ပြီး၊ plan က free ပြန်ဖြစ်ပါမယ်။`))return
+try{
+await updateDoc(doc(db,'companies',user.id),{
+refundStatus:'refunded',refundedAt:new Date().toISOString(),
+plan:'free',subscriptionStatus:'expired',
+updatedAt:new Date().toISOString(),
+})
+await cancelCompanyCommissions(user.id)
+try{await addDoc(collection(db,'companies',user.id,'auditLogs'),{action:'refund',module:'subscription',description:'Payment refunded — plan reset to free',timestamp:serverTimestamp(),userEmail:'CRM Admin'})}catch(e){}
+setCompanies(prev=>prev.map(c=>c.id===user.id?{...c,refundStatus:'refunded',plan:'free',subscriptionStatus:'expired'}:c))
+setDetailModal({...detailModal,refundStatus:'refunded',plan:'free'})
+}catch(e){alert(e.message)}
+}
+
+const handleClearRefund=async(user)=>{
+try{
+await updateDoc(doc(db,'companies',user.id),{refundStatus:deleteField()})
+setCompanies(prev=>prev.map(c=>c.id===user.id?{...c,refundStatus:''}:c))
+setDetailModal({...detailModal,refundStatus:''})
+}catch(e){alert(e.message)}
+}
+
+const handleBlockCompany=async(user)=>{
+const label=user.companyName||user.email||user.id
+const isBlocked=user.status==='blocked'
+if(!confirm(isBlocked?`"${label}" ကို ပြန်ဖွင့်မလား?`:`"${label}" ကို block လုပ်မလား? Main app သုံးလို့ မရတော့ပါ (data က ကျန်ပါမယ်)။\n\n⚠️ ဆိုင်းငံ့ထားတဲ့ (deferred) commission တွေ cancel ဖြစ်ပါမယ်။`))return
+try{
+const newStatus=isBlocked?'active':'blocked'
+const col=user._source==='main'?'companies':'crmClients'
+const field=user._source==='main'?'subscriptionStatus':'status'
+await updateDoc(doc(db,col,user.id),{[field]:newStatus,updatedAt:new Date().toISOString()})
+// block ဆို commission cancel (unblock ဆို မလုပ်)
+if(!isBlocked)await cancelCompanyCommissions(user.id)
+if(user._source==='main')setCompanies(prev=>prev.map(c=>c.id===user.id?{...c,subscriptionStatus:newStatus}:c))
+else setCrmClients(prev=>prev.map(c=>c.id===user.id?{...c,status:newStatus}:c))
+}catch(e){alert(e.message)}
+}
+
 const handleDeleteCompany=async(user)=>{
 const label=user.companyName||user.email||user.id
 if(!confirm(`"${label}" ကို အပြီးအပိုင် ဖျက်မှာ သေချာလား? ဒါ irreversible ဖြစ်ပါတယ်။`))return
-if(!confirm(`နောက်ဆုံး အတည်ပြုချက် — "${label}" နဲ့ သက်ဆိုင်တဲ့ data အားလုံး ပျောက်သွားမယ်။ ဆက်လုပ်မလား?`))return
+if(!confirm(`နောက်ဆုံး အတည်ပြုချက် — "${label}" နဲ့ သက်ဆိုင်တဲ့ data အားလုံး ပျောက်သွားမယ်။ ⚠️ Owner ရဲ့ login account ကတော့ ကျန်နေမယ် (Firebase limitation) — ဒါကြောင့် ဖျက်တာထက် "Block" လုပ်တာ ပိုလုံခြုံပါတယ်။ ဆက်ဖျက်မလား?`))return
 try{
+// commission cancel အရင်
+await cancelCompanyCommissions(user.id)
+// Delete မလုပ်ခင် blocked status အရင်ပေး (owner login ဝင်လည်း သုံးမရအောင်)
 const col=user._source==='main'?'companies':'crmClients'
+const field=user._source==='main'?'subscriptionStatus':'status'
+try{await updateDoc(doc(db,col,user.id),{[field]:'blocked'})}catch(e){}
 await deleteDoc(doc(db,col,user.id))
 if(user._source==='main')setCompanies(prev=>prev.filter(c=>c.id!==user.id))
 else setCrmClients(prev=>prev.filter(c=>c.id!==user.id))
@@ -498,6 +586,43 @@ return(
 </div>
 )
 })()}
+
+{/* Subscription Actions — main app company ပဲ */}
+{detailModal._source==='main'&&(
+<div style={{marginBottom:20,padding:16,background:'#f8fafc',borderRadius:10,border:'0.5px solid var(--border)'}}>
+<div style={{fontWeight:600,fontSize:13,marginBottom:12,display:'flex',alignItems:'center',gap:6}}>
+<CreditCard size={14} color="var(--primary)"/>Subscription Actions
+{detailModal.refundStatus==='requested'&&<span style={{fontSize:10,fontWeight:600,background:'#faeeda',color:'#d97706',padding:'2px 8px',borderRadius:10}}>Refund Requested</span>}
+{detailModal.refundStatus==='refunded'&&<span style={{fontSize:10,fontWeight:600,background:'#fcebeb',color:'#dc2626',padding:'2px 8px',borderRadius:10}}>Refunded</span>}
+</div>
+
+{/* Downgrade */}
+<div style={{display:'flex',alignItems:'center',gap:10,marginBottom:12,flexWrap:'wrap'}}>
+<span style={{fontSize:12,color:'var(--text-2)',minWidth:80}}>Downgrade:</span>
+<select value="" onChange={e=>handleDowngrade(detailModal,e.target.value)} className="form-input" style={{width:'auto',fontSize:12}}>
+<option value="">— Select plan —</option>
+{['free','starter','growth','business'].filter(p=>p!==detailModal.plan).map(p=><option key={p} value={p} style={{textTransform:'capitalize'}}>{p}</option>)}
+</select>
+</div>
+
+{/* Refund buttons */}
+<div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+{detailModal.refundStatus!=='refunded'&&detailModal.refundStatus!=='requested'&&(
+<button type="button" onClick={()=>handleRefundRequest(detailModal)} style={{fontSize:12,fontWeight:600,padding:'7px 14px',borderRadius:8,border:'1px solid #d97706',background:'white',color:'#d97706',cursor:'pointer'}}>Mark Refund Requested</button>
+)}
+{detailModal.refundStatus==='requested'&&(
+<>
+<button type="button" onClick={()=>handleRefunded(detailModal)} style={{fontSize:12,fontWeight:600,padding:'7px 14px',borderRadius:8,border:'none',background:'#dc2626',color:'white',cursor:'pointer'}}>Confirm Refunded</button>
+<button type="button" onClick={()=>handleClearRefund(detailModal)} style={{fontSize:12,fontWeight:600,padding:'7px 14px',borderRadius:8,border:'1px solid var(--border)',background:'white',color:'var(--text-2)',cursor:'pointer'}}>Cancel Request</button>
+</>
+)}
+{detailModal.refundStatus==='refunded'&&(
+<div style={{fontSize:12,color:'var(--text-3)'}}>✓ Refunded — plan reset to free, commissions cancelled</div>
+)}
+</div>
+{detailModal.refundReason&&<div style={{fontSize:11,color:'var(--text-3)',marginTop:8}}>Reason: {detailModal.refundReason}</div>}
+</div>
+)}
 
 {/* Members */}
 {detailModal._source==='main'&&Object.keys(detailModal.members||{}).length>0&&(
@@ -726,7 +851,7 @@ background:roleColor(role).bg,color:roleColor(role).color,textTransform:'capital
 <td style={{fontSize:12,color:'var(--text-3)'}}>{fmtDate(u.startDate)}</td>
 <td style={{fontSize:12,color:u.endDate&&u.endDate<new Date().toISOString().split('T')[0]?'#dc2626':'var(--text-3)'}}>{fmtDate(u.endDate)}</td>
 <td style={{textAlign:'center'}}>
-<select value={u.status} onChange={e=>handleStatusChange(u,e.target.value)} style={{
+<select value={u.rawStatus||u.status} onChange={e=>handleStatusChange(u,e.target.value)} style={{
 background:STATUS_BG[u.status]||'#f1f5f9',
 color:STATUS_COLORS[u.status]||'#64748b',
 border:'none',borderRadius:20,padding:'3px 8px',
@@ -742,6 +867,9 @@ fontSize:11,fontWeight:600,cursor:'pointer',outline:'none',textTransform:'capita
 </button>
 <button type="button" onClick={()=>openDetail(u)} title="View Detail" style={{background:'none',border:'none',cursor:'pointer',color:'var(--text-2)',padding:4,borderRadius:6}}>
 <Eye size={14}/>
+</button>
+<button type="button" onClick={()=>handleBlockCompany(u)} title={u.status==='blocked'?'Unblock':'Block'} style={{background:'none',border:'none',cursor:'pointer',color:u.status==='blocked'?'#16a34a':'#d97706',padding:4,borderRadius:6}}>
+<Ban size={14}/>
 </button>
 <button type="button" onClick={()=>handleDeleteCompany(u)} title="Delete" style={{background:'none',border:'none',cursor:'pointer',color:'#dc2626',padding:4,borderRadius:6}}>
 <Trash2 size={14}/>
