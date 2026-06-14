@@ -16,6 +16,7 @@ import Analytics from'./pages/Analytics'
 import PlanManagement from'./pages/PlanManagement'
 import Coupons from'./pages/Coupons'
 import CommissionSettings from'./pages/CommissionSettings'
+import ReceiptSettings from'./pages/ReceiptSettings'
 
 
 
@@ -45,6 +46,7 @@ return(
 <Route path="/plan-management" element={<PrivateRoute><PlanManagement/></PrivateRoute>}/>
 <Route path="/coupons" element={<PrivateRoute><Coupons/></PrivateRoute>}/>
 <Route path="/commission-settings" element={<PrivateRoute><CommissionSettings/></PrivateRoute>}/>
+<Route path="/receipt-settings" element={<PrivateRoute><ReceiptSettings/></PrivateRoute>}/>
 </Routes>
 </BrowserRouter>
 )
