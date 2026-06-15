@@ -96,6 +96,7 @@ return(
 {[
 ['Receipt ID',req.id],
 ['Plan',planLabel(req.requestedPlan)],
+['Duration',(req.months||1)+((req.months||1)===1?' month':' months')],
 ['Amount',fmtMMK(req.amount)],
 ['Date',fmtTS(req.approvedAt||req.createdAt)],
 ['Email',req.requestedByEmail||'-'],
