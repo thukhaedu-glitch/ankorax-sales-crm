@@ -1,26 +1,34 @@
 import{useState,useEffect}from'react'
 import{db}from'../firebase'
-import{collection,getDocs,addDoc,updateDoc,deleteDoc,doc,serverTimestamp}from'firebase/firestore'
+import{collection,getDocs,addDoc,updateDoc,deleteDoc,doc,getDoc,serverTimestamp}from'firebase/firestore'
 import Layout from'../components/Layout'
 import{Ticket,Plus,Trash2,Save,X,Copy,Check}from'lucide-react'
 
 const fmtMMK=(n)=>Number(n||0).toLocaleString('en-US')+' MMK'
 const fmtDate=(d)=>{if(!d)return'No expiry';try{return new Date(d).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})}catch{return d}}
+const ALL_DURATIONS=[1,3,6,12]
 
 export default function Coupons(){
 const[coupons,setCoupons]=useState([])
+const[planList,setPlanList]=useState([])
 const[loading,setLoading]=useState(true)
 const[modal,setModal]=useState(null)
 const[saving,setSaving]=useState(false)
 const[copied,setCopied]=useState('')
 
-const blank={code:'',type:'percent',value:10,expiry:'',usageLimit:0,active:true}
+const blank={code:'',type:'percent',value:10,expiry:'',usageLimit:0,active:true,plans:[],durations:[]}
 
 const load=async()=>{
 setLoading(true)
 try{
-const snap=await getDocs(collection(db,'coupons'))
+const[snap,planSnap]=await Promise.all([
+getDocs(collection(db,'coupons')),
+getDoc(doc(db,'config','plans')),
+])
 setCoupons(snap.docs.map(d=>({id:d.id,...d.data()})))
+if(planSnap.exists()&&planSnap.data().plans){
+setPlanList(planSnap.data().plans.filter(p=>p.key!=='free').map(p=>({key:p.key,label:p.label})))
+}
 }catch(e){console.error(e)}
 setLoading(false)
 }
@@ -39,6 +47,8 @@ type:modal.type,
 value:Number(modal.value),
 expiry:modal.expiry||'',
 usageLimit:Number(modal.usageLimit)||0,
+plans:modal.plans||[],
+durations:(modal.durations||[]).map(Number),
 usedCount:modal.usedCount||0,
 active:modal.active,
 }
@@ -115,6 +125,43 @@ return(
 <label style={{fontSize:12,fontWeight:500,display:'block',marginBottom:4}}>Usage Limit (0 = unlimited)</label>
 <input type="number" className="form-input" value={modal.usageLimit} onChange={e=>setModal({...modal,usageLimit:e.target.value})}/>
 </div>
+
+{/* Plan restriction */}
+<div style={{marginBottom:14}}>
+<label style={{fontSize:12,fontWeight:500,display:'block',marginBottom:6}}>Plan အကန့်အသတ် (ဘာမှ မရွေးရင် = plan အားလုံး)</label>
+<div style={{display:'flex',flexWrap:'wrap',gap:8}}>
+{planList.map(p=>{
+const sel=(modal.plans||[]).includes(p.key)
+return(
+<label key={p.key} style={{display:'flex',alignItems:'center',gap:5,fontSize:12,padding:'5px 10px',borderRadius:8,cursor:'pointer',border:sel?'1.5px solid var(--primary)':'0.5px solid var(--border)',background:sel?'var(--primary-light)':'white'}}>
+<input type="checkbox" checked={sel} onChange={e=>{
+const cur=modal.plans||[]
+setModal({...modal,plans:e.target.checked?[...cur,p.key]:cur.filter(x=>x!==p.key)})
+}}/>{p.label}
+</label>
+)
+})}
+</div>
+</div>
+
+{/* Duration restriction */}
+<div style={{marginBottom:14}}>
+<label style={{fontSize:12,fontWeight:500,display:'block',marginBottom:6}}>Duration အကန့်အသတ် (ဘာမှ မရွေးရင် = duration အားလုံး)</label>
+<div style={{display:'flex',gap:8}}>
+{ALL_DURATIONS.map(m=>{
+const sel=(modal.durations||[]).map(Number).includes(m)
+return(
+<label key={m} style={{display:'flex',alignItems:'center',gap:5,fontSize:12,padding:'5px 12px',borderRadius:8,cursor:'pointer',border:sel?'1.5px solid var(--primary)':'0.5px solid var(--border)',background:sel?'var(--primary-light)':'white'}}>
+<input type="checkbox" checked={sel} onChange={e=>{
+const cur=(modal.durations||[]).map(Number)
+setModal({...modal,durations:e.target.checked?[...cur,m]:cur.filter(x=>x!==m)})
+}}/>{m}m
+</label>
+)
+})}
+</div>
+</div>
+
 <label style={{display:'flex',alignItems:'center',gap:6,fontSize:13,cursor:'pointer',marginBottom:18}}>
 <input type="checkbox" checked={modal.active} onChange={e=>setModal({...modal,active:e.target.checked})}/>Active
 </label>
@@ -167,7 +214,15 @@ return(
 <button onClick={()=>copyCode(c.code)} style={{background:'none',border:'none',cursor:'pointer',color:copied===c.code?'#16a34a':'var(--text-3)'}}>{copied===c.code?<Check size={13}/>:<Copy size={13}/>}</button>
 </div>
 </td>
-<td style={{fontWeight:600}}>{c.type==='percent'?`${c.value}% off`:`${fmtMMK(c.value)} off`}</td>
+<td style={{fontWeight:600}}>
+{c.type==='percent'?`${c.value}% off`:`${fmtMMK(c.value)} off`}
+{((c.plans&&c.plans.length)||(c.durations&&c.durations.length))&&(
+<div style={{display:'flex',gap:4,marginTop:4,flexWrap:'wrap'}}>
+{(c.plans||[]).map(p=><span key={p} style={{fontSize:9,background:'#eef2ff',color:'#4f6ef7',padding:'1px 6px',borderRadius:8,textTransform:'capitalize'}}>{p}</span>)}
+{(c.durations||[]).map(d=><span key={d} style={{fontSize:9,background:'#f0fdf4',color:'#16a34a',padding:'1px 6px',borderRadius:8}}>{d}m</span>)}
+</div>
+)}
+</td>
 <td style={{fontSize:12,color:expired?'#dc2626':'var(--text-3)'}}>{fmtDate(c.expiry)}{expired&&' (expired)'}</td>
 <td style={{fontSize:12,color:usedUp?'#dc2626':'var(--text-3)'}}>{c.usageLimit>0?`${c.usedCount||0}/${c.usageLimit}`:`${c.usedCount||0}/∞`}</td>
 <td style={{textAlign:'center'}}>
