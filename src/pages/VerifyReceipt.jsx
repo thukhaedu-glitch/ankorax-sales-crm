@@ -10,13 +10,21 @@ const fmtTS=(ts)=>{if(!ts)return'-';try{const d=ts.seconds?new Date(ts.seconds*1
 export default function VerifyReceipt(){
 const{requestId}=useParams()
 const[req,setReq]=useState(null)
+const[planMap,setPlanMap]=useState({})
 const[loading,setLoading]=useState(true)
 const[notFound,setNotFound]=useState(false)
 
 useEffect(()=>{
 const load=async()=>{
 try{
-const snap=await getDoc(doc(db,'upgradeRequests',requestId))
+const[snap,planSnap]=await Promise.all([
+getDoc(doc(db,'upgradeRequests',requestId)),
+getDoc(doc(db,'config','plans')),
+])
+if(planSnap.exists()&&planSnap.data().plans){
+const m={};planSnap.data().plans.forEach(p=>{m[p.key]=p.label})
+setPlanMap(m)
+}
 if(snap.exists())setReq({id:snap.id,...snap.data()})
 else setNotFound(true)
 }catch(e){console.error(e);setNotFound(true)}
@@ -24,6 +32,8 @@ setLoading(false)
 }
 load()
 },[requestId])
+
+const planLabel=(k)=>planMap[k]||k
 
 const wrap={minHeight:'100vh',background:'#f8fafc',display:'flex',alignItems:'center',justifyContent:'center',padding:20,fontFamily:'system-ui,-apple-system,sans-serif'}
 const card={background:'white',borderRadius:20,padding:'40px 32px',maxWidth:420,width:'100%',boxShadow:'0 8px 32px rgba(0,0,0,0.08)',border:'0.5px solid #e2e8f0'}
@@ -85,7 +95,7 @@ return(
 <div style={{background:'#f8fafc',borderRadius:12,padding:16}}>
 {[
 ['Receipt ID',req.id],
-['Plan',(req.requestedPlan||'').charAt(0).toUpperCase()+(req.requestedPlan||'').slice(1)],
+['Plan',planLabel(req.requestedPlan)],
 ['Amount',fmtMMK(req.amount)],
 ['Date',fmtTS(req.approvedAt||req.createdAt)],
 ['Email',req.requestedByEmail||'-'],
