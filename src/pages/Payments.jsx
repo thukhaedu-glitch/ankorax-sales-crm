@@ -57,9 +57,10 @@ const handleApprove=async(req)=>{
 if(!confirm(`"${req.requestedByEmail}" ရဲ့ ${req.requestedPlan} plan (${fmtMMK(req.amount)}) ကို approve လုပ်မလား?`))return
 setProcessing(req.id)
 try{
-// end date = +30 days
+// end date = +(months × 30) days
+const months=req.months||1
 const end=new Date()
-end.setDate(end.getDate()+30)
+end.setDate(end.getDate()+30*months)
 const start=new Date()
 // company upgrade
 await updateDoc(doc(db,'companies',req.companyId),{
